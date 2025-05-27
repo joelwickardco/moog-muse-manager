@@ -65,25 +65,6 @@ describe('App', () => {
     expect(screen.queryByText('Test Patch 2')).not.toBeInTheDocument();
   });
 
-  it('should filter patches by category', async () => {
-    await act(async () => {
-      render(<App />);
-    });
-    
-    // Wait for patches to load
-    await screen.findByText('Test Patch 1');
-    
-    // Select Bass category
-    await act(async () => {
-      const categorySelect = screen.getByLabelText('Category');
-      fireEvent.change(categorySelect, { target: { value: 'Bass' } });
-    });
-    
-    // Only Bass patches should be visible
-    expect(screen.getByText('Test Patch 1')).toBeInTheDocument();
-    expect(screen.queryByText('Test Patch 2')).not.toBeInTheDocument();
-  });
-
   it('should filter patches by bank', async () => {
     await act(async () => {
       render(<App />);

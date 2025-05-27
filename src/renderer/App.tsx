@@ -17,13 +17,11 @@ const App: React.FC = () => {
   const [patches, setPatches] = useState<Patch[]>([]);
   const [filter, setFilter] = useState({ 
     loved: false, 
-    category: '', 
     tag: '',
     bank: '',
     library: '',
     custom: false
   });
-  const [categories, setCategories] = useState<string[]>(['Bass', 'Lead', 'Pad', 'Pluck', 'Strings']);
 
   // Load saved patches when component mounts
   useEffect(() => {
@@ -33,13 +31,6 @@ const App: React.FC = () => {
         console.log('Loaded patches from database:', savedPatches);
         console.log('Patches with custom flag:', savedPatches.filter(p => p.custom).length);
         setPatches(savedPatches);
-        
-        // Update categories based on saved patches
-        const uniqueCategories = new Set([
-          ...categories,
-          ...savedPatches.map(patch => patch.category).filter(Boolean)
-        ]);
-        setCategories(Array.from(uniqueCategories));
       } catch (error) {
         console.error('Error loading saved patches:', error);
       }
@@ -98,7 +89,6 @@ const App: React.FC = () => {
 
   const filteredPatches = patches.filter(patch => {
     const isLoved = filter.loved ? patch.loved : true;
-    const matchesCategory = filter.category ? patch.category === filter.category : true;
     const matchesTag = filter.tag ? patch.tags.includes(filter.tag) : true;
     const matchesBank = filter.bank ? patch.bank === filter.bank : true;
     const matchesLibrary = filter.library ? patch.library === filter.library : true;
@@ -112,7 +102,7 @@ const App: React.FC = () => {
       });
     }
     
-    return isLoved && matchesCategory && matchesTag && matchesBank && matchesLibrary && matchesCustom;
+    return isLoved && matchesTag && matchesBank && matchesLibrary && matchesCustom;
   });
 
   // Get unique banks and libraries for filter dropdowns
@@ -226,16 +216,6 @@ const App: React.FC = () => {
                         Custom
                       </span>
                     )}
-                    <select
-                      value={patch.category}
-                      onChange={(e) => handlePatchEdit(index, 'category', e.target.value)}
-                      className="border rounded px-2 py-1"
-                    >
-                      <option value="">Select Category</option>
-                      {categories.map(category => (
-                        <option key={category} value={category}>{category}</option>
-                      ))}
-                    </select>
                     <input
                       type="text"
                       placeholder="Add tags"

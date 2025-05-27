@@ -9,7 +9,6 @@ describe('App', () => {
       path: '/test/path/patch1.mmp',
       name: 'Test Patch 1',
       loved: true,
-      category: 'Bass',
       tags: ['test', 'bass'],
       bank: 'userbank1',
       library: 'testlib1',
@@ -151,14 +150,14 @@ describe('App', () => {
     
     // Set a filter
     await act(async () => {
-      const categorySelect = screen.getByLabelText('Category');
-      fireEvent.change(categorySelect, { target: { value: 'Bass' } });
+      const bankSelect = screen.getByLabelText('Bank');
+      fireEvent.change(bankSelect, { target: { value: 'userbank1' } });
     });
     
     // Clear the filter
     await act(async () => {
-      const categorySelect = screen.getByLabelText('Category');
-      fireEvent.change(categorySelect, { target: { value: '' } });
+      const bankSelect = screen.getByLabelText('Bank');
+      fireEvent.change(bankSelect, { target: { value: '' } });
     });
     
     // Should have called loadPatches again

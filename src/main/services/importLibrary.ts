@@ -1,14 +1,10 @@
 import { ipcMain } from 'electron';
-import { createReadStream } from 'fs';
 import * as path from 'path';
-import * as os from 'os';
-import * as unzipper from 'unzipper';
 import { LibraryManager } from '../database/libraries';
 import { BankManager } from '../database/banks';
 import { PatchManager } from '../database/patches';
 import { PatchSequenceManager } from '../database/patch-sequences';
 import { calculateSHA256 } from '../utils';
-import { access } from 'fs/promises';
 import fs from 'fs/promises';
 
 // Helper function to convert fs.promises to fs
@@ -42,7 +38,7 @@ export async function importLibrary(libraryPath: string, libraryManager: Library
     // await fsPromises.mkdir(tempDirPath, { recursive: true });
     // await extractZip(zipPath, tempDirPath);
 
-    console.log("Importing library from: ", libraryPath);
+    console.log('Importing library from: ', libraryPath);
 
     // Step 2: Validate library structure
     const libraryPathSub = path.join(libraryPath, 'library');
@@ -51,7 +47,7 @@ export async function importLibrary(libraryPath: string, libraryManager: Library
     } catch {
       throw new Error('Invalid library format: Missing library directory');
     }
-    console.log("Library directory found: ", libraryPathSub);
+    console.log('Library directory found: ', libraryPathSub);
 
     // Step 3: Calculate library fingerprint
     const libraryFingerprint = await calculateSHA256(libraryPathSub);
@@ -137,7 +133,7 @@ export async function importLibrary(libraryPath: string, libraryManager: Library
     } catch {
       return;
     }
-    console.log("Importing sequences from: ", sequencesPath);
+    console.log('Importing sequences from: ', sequencesPath);
 
     const seqBankDirs = await fs.readdir(sequencesPath);
     for (const seqBankDir of seqBankDirs) {
@@ -177,7 +173,7 @@ export async function importLibrary(libraryPath: string, libraryManager: Library
           await bankManager.associateWithPatchSequence(bank.id, seqId);
           imported.sequences++;
         } catch (error) {
-          console.log("Failed to import sequence: ", seqDir, error);
+          console.log('Failed to import sequence: ', seqDir, error);
           continue;
         }
       }
@@ -186,7 +182,7 @@ export async function importLibrary(libraryPath: string, libraryManager: Library
     // Clean up
     // await fs.rmdir(tempDirPath, { recursive: true });
 
-    console.log("We're Done!", imported);
+    console.log('We\'re Done!', imported);
 
     return {
       success: true,
@@ -216,33 +212,33 @@ export function registerImportLibraryIPC(zipPath: string, libraryManager: Librar
 }
 
 // Helper function for zip extraction
-async function extractZip(zipPath: string, outputPath: string): Promise<void> {
-  try {
-    // Ensure output directory exists
-    await fs.mkdir(outputPath, { recursive: true });
+// async function extractZip(zipPath: string, outputPath: string): Promise<void> {
+//   try {
+//     // Ensure output directory exists
+//     await fs.mkdir(outputPath, { recursive: true });
 
-    // Create read stream for zip file
-    const source = createReadStream(zipPath);
+//     // Create read stream for zip file
+//     const source = createReadStream(zipPath);
     
-    // Extract zip contents
-    const extractStream = unzipper.Extract({ path: outputPath });
+//     // Extract zip contents
+//     const extractStream = unzipper.Extract({ path: outputPath });
     
-    // Handle stream events
-    await new Promise<void>((resolve, reject) => {
-      source.pipe(extractStream)
-        .on('finish', () => {
-          source.close();
-          resolve();
-        })
-        .on('error', (err: Error) => {
-          source.close();
-          reject(err);
-        });
-    });
+//     // Handle stream events
+//     await new Promise<void>((resolve, reject) => {
+//       source.pipe(extractStream)
+//         .on('finish', () => {
+//           source.close();
+//           resolve();
+//         })
+//         .on('error', (err: Error) => {
+//           source.close();
+//           reject(err);
+//         });
+//     });
 
-    console.log('Extracted zip to', outputPath);
-  } catch (error) {
-    console.error('Error extracting zip:', error);
-    throw error;
-  }
-}
+//     console.log('Extracted zip to', outputPath);
+//   } catch (error) {
+//     console.error('Error extracting zip:', error);
+//     throw error;
+//   }
+// }

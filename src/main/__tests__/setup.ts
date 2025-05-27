@@ -1,5 +1,3 @@
-import { app, ipcMain } from 'electron';
-
 // Mock Electron's app module since it's not available in test environment
 jest.mock('electron', () => ({
   app: {

@@ -1,6 +1,3 @@
-import fs from 'fs';
-import path from 'path';
-
 jest.mock('fs');
 jest.mock('path');
 jest.mock('electron', () => ({
@@ -12,8 +9,6 @@ jest.mock('electron', () => ({
     getPath: jest.fn(),
   },
 }));
-
-import * as electron from 'electron';
 
 describe('Main Process', () => {
   beforeEach(() => {

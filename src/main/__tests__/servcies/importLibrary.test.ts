@@ -48,7 +48,7 @@ describe('importLibrary integration (no mocks)', () => {
       patchSequenceManager
     );
 
-    console.log("result", result);
+    console.log('result', result);
 
     expect(result.success).toBe(true);
     expect(result.imported.libraries).toBe(1);

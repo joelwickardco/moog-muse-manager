@@ -1,10 +1,8 @@
 import { LibraryManager } from '../../database/libraries';
-import { NotFoundError, QueryError } from '../../database/errors';
 
 // Add custom matcher for error types
 expect.extend({
   toThrowErrorWithMessage(received, expectedErrorType, expectedMessage) {
-    const error = this.error;
     const isCorrectType = received instanceof expectedErrorType;
     const hasCorrectMessage = received.message === expectedMessage;
     

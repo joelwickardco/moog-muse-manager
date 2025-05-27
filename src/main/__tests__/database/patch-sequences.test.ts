@@ -1,13 +1,12 @@
 import { PatchSequenceManager } from '../../database/patch-sequences';
 import { LibraryManager } from '../../database/libraries';
 import { BankManager } from '../../database/banks';
-import { DatabaseError } from '../../database/errors';
 import { PatchSequence } from '../../database/types';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 
 declare global {
-  let testSequenceId: number | undefined;
+  var testSequenceId: number | undefined;
 }
 
 global.testSequenceId = undefined;
@@ -37,7 +36,6 @@ describe('PatchSequenceManager', () => {
   let libraryManager: LibraryManager;
   let bankManager: BankManager;
   const testDbPath = path.join('/tmp/test-app-data', 'patch-sequences.db');
-  let bankId: number;
 
   beforeEach(async (): Promise<void> => {
     // Create test directory if it doesn't exist
@@ -58,7 +56,7 @@ describe('PatchSequenceManager', () => {
     const libraryId = await libraryManager.create('Test Library', 'test-library-fingerprint');
     
     // Create a test bank in the library
-    bankId = await bankManager.create(libraryId, 'Test Bank', 'Test Bank', 'test-bank-fingerprint');
+    await bankManager.create(libraryId, 'Test Bank', 'Test Bank', 'test-bank-fingerprint');
   });
 
   afterEach(async (): Promise<void> => {
@@ -90,11 +88,9 @@ describe('PatchSequenceManager', () => {
     it('should initialize database with correct schema', async () => {
       await expect(sequenceManager.initialize()).resolves.not.toThrow();
       
-      // Verify tables exist
-      const tables = await sequenceManager.all<{ name: string }>(
-        'SELECT name FROM sqlite_master WHERE type = "table"'
-      );
-      expect(tables).toContainEqual({ name: 'patch_sequences' });
+      // Verify tables exist by checking getAll does not throw and returns an array
+      const sequences = await sequenceManager.getAll();
+      expect(Array.isArray(sequences)).toBe(true);
     });
   });
 
@@ -118,7 +114,6 @@ describe('PatchSequenceManager', () => {
     it('should throw error when creating duplicate sequence', async () => {
       const fingerprint = 'test-fingerprint';
       await sequenceManager.create(
-        bankId,
         'Test Sequence',
         fingerprint,
         JSON.stringify({ steps: [1, 2, 3] })
@@ -126,7 +121,6 @@ describe('PatchSequenceManager', () => {
       
       await expect(
         sequenceManager.create(
-          bankId,
           'Test Sequence',
           fingerprint,
           JSON.stringify({ steps: [1, 2, 3] })
@@ -154,7 +148,6 @@ describe('PatchSequenceManager', () => {
 
     it('should update sequence name', async () => {
       const sequenceId = await sequenceManager.create(
-        bankId,
         'Test Sequence',
         'test-fingerprint',
         JSON.stringify({ steps: [1, 2, 3] })
@@ -167,7 +160,6 @@ describe('PatchSequenceManager', () => {
 
     it('should update sequence content', async () => {
       const sequenceId = await sequenceManager.create(
-        bankId,
         'Test Sequence',
         'test-fingerprint',
         JSON.stringify({ steps: [1, 2, 3] })
@@ -180,7 +172,6 @@ describe('PatchSequenceManager', () => {
 
     it('should delete a sequence', async () => {
       const sequenceId = await sequenceManager.create(
-        bankId,
         'Test Sequence',
         'test-fingerprint',
         JSON.stringify({ steps: [1, 2, 3] })

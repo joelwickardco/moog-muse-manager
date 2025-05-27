@@ -63,14 +63,13 @@ describe('BankManager', () => {
   describe('Bank Operations', () => {
     let libraryId;
     let bank1Id;
-    let bank2Id;
 
     beforeEach(async () => {
       libraryId = await libraryManager.create('Test Library', 'test-library-fingerprint');
       const fingerprint1 = 'bank1-fingerprint';
       const fingerprint2 = 'bank2-fingerprint';
       bank1Id = await bankManager.create(libraryId, 'Bank 1', 'bank_1', fingerprint1);
-      bank2Id = await bankManager.create(libraryId, 'Bank 2', 'bank_2', fingerprint2);
+      await bankManager.create(libraryId, 'Bank 2', 'bank_2', fingerprint2);
     });
 
     it('should create a new bank', async () => {
@@ -136,7 +135,6 @@ describe('BankManager', () => {
     });
 
     it('should throw error when updating bank name to existing name in same library', async () => {
-      const fingerprint2 = 'bank2-fingerprint';
       const bankId1 = await bankManager.create(libraryId, 'Bank 1', 'bank_1', 'unique-fingerprint-1');
       await bankManager.create(libraryId, 'Bank 2', 'bank_2', 'unique-fingerprint-2');
       

@@ -1,5 +1,3 @@
-import { Database } from '@vscode/sqlite3';
-
 export interface DatabaseRow {
   id: number;
 }

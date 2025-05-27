@@ -16,10 +16,6 @@ const fsPromises = {
   access: fs.access
 } as const;
 
-interface ImportLibraryParams {
-  zipPath: string;
-}
-
 interface ImportResult {
   success: boolean;
   message: string;
@@ -131,8 +127,9 @@ export async function importLibrary(libraryPath: string, libraryManager: Library
     try {
       await fsPromises.access(sequencesPath);
     } catch {
-      return;
+      throw new Error(`Invalid library format: Missing sequences directory ${sequencesPath}`);
     }
+    
     console.log('Importing sequences from: ', sequencesPath);
 
     const seqBankDirs = await fs.readdir(sequencesPath);
@@ -206,7 +203,7 @@ export async function importLibrary(libraryPath: string, libraryManager: Library
 
 // Register IPC handler
 export function registerImportLibraryIPC(zipPath: string, libraryManager: LibraryManager, bankManager: BankManager, patchManager: PatchManager, patchSequenceManager: PatchSequenceManager) {
-  ipcMain.handle('importLibrary', async (event, params: ImportLibraryParams) => {
+  ipcMain.handle('importLibrary', async () => {
     return importLibrary(zipPath, libraryManager, bankManager, patchManager, patchSequenceManager);
   });
 }

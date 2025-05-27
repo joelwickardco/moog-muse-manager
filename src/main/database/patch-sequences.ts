@@ -133,7 +133,7 @@ export class PatchSequenceManager extends BaseDatabaseManager {
 
     const existing = await this.getBankSequences(sequenceId, bankId);
     if (existing.length > 0) {
-      throw new QueryError(`Sequence ${sequenceId} is already in bank ${bankId}`);
+      throw new NotFoundError(`Sequence ${sequenceId} is already in bank ${bankId}`);
     }
 
     await this.run(PatchSequenceManager.SQL.ADD_TO_BANK, [bankId, sequenceId]);

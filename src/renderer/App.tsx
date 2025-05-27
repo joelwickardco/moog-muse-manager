@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Patch } from '../main/database';
+import { Patch } from '../main/database/types';
 
 // Define the type for the window object with our electron API
 declare global {
@@ -54,19 +54,6 @@ const App: React.FC = () => {
       setPatches(importedPatches as Patch[]);
     } catch (error) {
       console.error('Error importing patches:', error);
-    }
-  };
-
-  const handleExport = async (): Promise<void> => {
-    try {
-      const selectedPatches = patches.filter(p => p.loved).map(p => p.path);
-      if (selectedPatches.length === 0) {
-        alert('Please select patches to export by marking them as loved');
-        return;
-      }
-      await window.electronAPI.exportPatches(selectedPatches);
-    } catch (error) {
-      console.error('Error exporting patches:', error);
     }
   };
 
@@ -148,12 +135,6 @@ const App: React.FC = () => {
             className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
           >
             Import Patches
-          </button>
-          <button
-            onClick={handleExport}
-            className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded ml-2"
-          >
-            Export Patches
           </button>
           <div className="mt-4">
             <h2 className="text-xl font-semibold">Filter Patches</h2>

@@ -1,20 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import App from '../App';
-
-// Mock the electron API
-const mockElectronAPI = {
-  importPatches: jest.fn(),
-  exportPatches: jest.fn(),
-  loadPatches: jest.fn(),
-  updatePatch: jest.fn()
-};
-
-// Mock window.electronAPI
-Object.defineProperty(window, 'electronAPI', {
-  value: mockElectronAPI
-});
+import App from '../../../renderer/App';
 
 describe('App', () => {
   const mockPatches = [
@@ -43,8 +30,7 @@ describe('App', () => {
   ];
 
   beforeEach(() => {
-    jest.clearAllMocks();
-    mockElectronAPI.loadPatches.mockResolvedValue(mockPatches);
+    window.electronAPI.loadPatches.mockResolvedValue(mockPatches);
   });
 
   it('should load and display patches on mount', async () => {
@@ -195,6 +181,6 @@ describe('App', () => {
     });
     
     // Should have called loadPatches again
-    expect(mockElectronAPI.loadPatches).toHaveBeenCalledTimes(2);
+    expect(window.electronAPI.loadPatches).toHaveBeenCalledTimes(2);
   });
 }); 

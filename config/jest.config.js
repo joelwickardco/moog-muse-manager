@@ -1,18 +1,19 @@
 module.exports = {
   preset: 'ts-jest',
-  testEnvironment: 'node',
+  testEnvironment: 'jsdom',
   rootDir: '../',
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
     '^@main/(.*)$': '<rootDir>/src/main/$1'
   },
   setupFiles: ['<rootDir>/config/jest.setup.js'],
+  setupFilesAfterEnv: ['<rootDir>/src/main/__tests__/renderer/jest.setup.ts'],
   testMatch: [
-    '<rootDir>/src/**/__tests__/**/*.test.[jt]s?(x)',
-    '<rootDir>/src/**/__tests__/**/*.spec.[jt]s?(x)'
+    '<rootDir>/src/main/__tests__/**/*.test.[jt]s?(x)',
+    '<rootDir>/src/main/__tests__/**/*.spec.[jt]s?(x)'
   ],
   transform: {
-    '^.+\.(ts|tsx)$': 'ts-jest'
+    '^.+\\.(ts|tsx)$': 'ts-jest'
   },
   transformIgnorePatterns: [
     'node_modules/(?!(better-sqlite3)/)'

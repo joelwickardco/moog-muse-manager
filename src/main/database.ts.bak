@@ -1,0 +1,515 @@
+import { app } from 'electron';
+import path from 'path';
+import sqlite3 from '@vscode/sqlite3';
+import fs from 'fs';
+import crypto from 'crypto';
+
+interface PatchRow {
+  id: number;
+  name: string;
+  content: string;
+  fingerprint: string;
+  favorited: number;
+  tags: string;
+}
+
+interface SequenceRow {
+  id: number;
+  name: string;
+  content: string;
+  fingerprint: string;
+}
+
+interface BankRow {
+  id: number;
+  name: string;
+  libraryId: number;
+  type: 'patch' | 'sequence';
+  systemName: string;
+  fingerprint: string;
+}
+
+export interface Library {
+  id: number;
+  name: string;
+  fingerprint: string;
+}
+
+export interface Bank {
+  id: number;
+  name: string;
+  libraryId: number;
+  type: 'patch' | 'sequence';
+  systemName: string;
+  fingerprint: string;
+}
+
+export interface Patch {
+  id: number;
+  fingerprint: string;
+  content: string;
+  name: string;
+  favorited: boolean;
+  tags: string[];
+}
+
+export interface Sequence {
+  id: number;
+  name: string;
+  fingerprint: string;
+  content: string;
+}
+
+interface BankPatchRow {
+  id: number;
+  bankId: number;
+  patchId: number;
+}
+
+interface BankSequenceRow {
+  id: number;
+  bankId: number;
+  sequenceId: number;
+}
+
+
+
+export function calculateChecksum(patchPath: string): string {
+  const fileContent = fs.readFileSync(patchPath);
+  const directoryName = path.dirname(patchPath);
+  const combinedData = Buffer.concat([
+    Buffer.from(directoryName),
+    fileContent
+  ]);
+  return crypto.createHash('md5').update(combinedData).digest('hex');
+}
+
+export class DatabaseManager {
+  private db: sqlite3.Database | null = null;
+  protected dbPath: string;
+
+  private constructor(dbPath: string) {
+    this.dbPath = dbPath;
+    this.db = null;
+  }
+
+  static async create(dbPathOverride?: string): Promise<DatabaseManager> {
+    const dbPath = dbPathOverride || path.join(app.getPath('userData'), 'moog-muse-manager.db');
+    const dbDir = path.dirname(dbPath);
+    if (!fs.existsSync(dbDir)) {
+      fs.mkdirSync(dbDir, { recursive: true });
+    }
+
+    const instance = new DatabaseManager(dbPath);
+    
+    // Initialize database
+    await new Promise<void>((resolve, reject) => {
+      instance.db = new sqlite3.Database(instance.dbPath, (err) => {
+        if (err) {
+          console.error('Failed to open database:', err);
+          reject(err);
+          return;
+        }
+        resolve();
+      });
+    });
+
+    // Initialize tables and indices
+    await instance.initializeDatabase();
+    return instance;
+  }
+
+  async initializeDatabase(): Promise<void> {
+    try {
+      console.log('Starting database initialization');
+      
+      // First create the tables
+      await new Promise<void>((resolve, reject) => {
+        this.db?.serialize(() => {
+          this.db?.run(`CREATE TABLE IF NOT EXISTS banks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            libraryId INTEGER NOT NULL,
+            type TEXT NOT NULL,
+            systemName TEXT NOT NULL,
+            fingerprint TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          )`, (err) => {
+            if (err) {
+              console.error('Failed to create banks table:', err);
+              reject(err);
+            } else {
+              resolve();
+            }
+          });
+        });
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        this.db?.serialize(() => {
+          this.db?.run(`CREATE TABLE IF NOT EXISTS patches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            content TEXT NOT NULL,
+            fingerprint TEXT NOT NULL,
+            favorited INTEGER NOT NULL DEFAULT 0,
+            tags TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          )`, (err) => {
+            if (err) {
+              console.error('Failed to create patches table:', err);
+              reject(err);
+            } else {
+              resolve();
+            }
+          });
+        });
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        this.db?.serialize(() => {
+          this.db?.run(`CREATE TABLE IF NOT EXISTS sequences (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            content TEXT NOT NULL,
+            fingerprint TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          )`, (err) => {
+            if (err) {
+              console.error('Failed to create sequences table:', err);
+              reject(err);
+            } else {
+              resolve();
+            }
+          });
+        });
+      });
+
+      // Create indices
+      await new Promise<void>((resolve, reject) => {
+        this.db?.serialize(() => {
+          this.db?.run('CREATE INDEX IF NOT EXISTS idx_banks_fingerprint ON banks (fingerprint)', (err) => {
+            if (err) {
+              console.error('Failed to create index:', err);
+              reject(err);
+            } else {
+              resolve();
+            }
+          });
+        });
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        this.db?.serialize(() => {
+          this.db?.run('CREATE INDEX IF NOT EXISTS idx_patches_fingerprint ON patches (fingerprint)', (err) => {
+            if (err) {
+              console.error('Failed to create index:', err);
+              reject(err);
+            } else {
+              resolve();
+            }
+          });
+        });
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        this.db?.serialize(() => {
+          this.db?.run('CREATE INDEX IF NOT EXISTS idx_sequences_fingerprint ON sequences (fingerprint)', (err) => {
+            if (err) {
+              console.error('Failed to create index:', err);
+              reject(err);
+            } else {
+              resolve();
+            }
+          });
+        });
+      });
+
+      // Then create indices
+      await new Promise<void>((resolve, reject) => {
+        this.db?.serialize(() => {
+          this.db?.run('CREATE INDEX IF NOT EXISTS idx_patches_checksum ON patches (checksum)', (err) => {
+            if (err) {
+              console.error('Failed to create index:', err);
+              reject(err);
+            } else {
+              resolve();
+            }
+          });
+        });
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        this.db?.serialize(() => {
+          this.db?.run('CREATE INDEX IF NOT EXISTS idx_patches_bank ON patches (bank)', (err) => {
+            if (err) {
+              console.error('Failed to create index:', err);
+              reject(err);
+            } else {
+              resolve();
+            }
+          });
+        });
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        this.db?.serialize(() => {
+          this.db?.run('CREATE INDEX IF NOT EXISTS idx_patches_library ON patches (library)', (err) => {
+            if (err) {
+              console.error('Failed to create index:', err);
+              reject(err);
+            } else {
+              resolve();
+            }
+          });
+        });
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        this.db?.serialize(() => {
+          this.db?.run('CREATE INDEX IF NOT EXISTS idx_patches_created ON patches (created_at)', (err) => {
+            if (err) {
+              console.error('Failed to create index:', err);
+              reject(err);
+            } else {
+              resolve();
+            }
+          });
+        });
+      });
+
+      console.log('Database initialization completed successfully');
+    } catch (error: any) {
+      console.error('Database initialization failed:', error);
+      throw error;
+    }
+  }
+
+  private async get<T>(sql: string, params: any[] = []): Promise<T | undefined> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    return new Promise((resolve, reject) => {
+      this.db!.serialize(() => {
+        this.db!.get(sql, params, (err, row) => {
+          if (err) {
+            console.error('Database error:', err);
+            reject(err);
+          } else {
+            resolve(row);
+          }
+        });
+      });
+    });
+  }
+
+  private async run(sql: string, params: any[] = []): Promise<void> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    return new Promise((resolve, reject) => {
+      this.db!.serialize(() => {
+        this.db!.run(sql, params, (err) => {
+          if (err) {
+            console.error('Database error:', err);
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
+else resolve(row);
+});
+});
+return !!row;
+} catch (error: any) {
+console.error('Failed to check patch existence:', error);
+
+  // Sequence operations
+  async createSequence(sequence: Sequence): Promise<void> {
+    try {
+      await this.run(`INSERT INTO sequences (name, content, fingerprint) 
+                     VALUES (?, ?, ?)`, 
+                     [sequence.name, sequence.content, sequence.fingerprint]);
+    } catch (error: any) {
+
+async getSequenceByFingerprint(fingerprint: string): Promise<Sequence | null> {
+try {
+const row = await this.get<SequenceRow>(
+'SELECT id, name, content, fingerprint FROM sequences WHERE fingerprint = ?',
+[fingerprint]
+);
+if (row) {
+return {
+id: row.id,
+name: row.name,
+content: row.content,
+fingerprint: row.fingerprint
+};
+}
+return null;
+} catch (error: any) {
+console.error('Failed to get sequence by fingerprint:', error);
+return null;
+}
+}
+
+async getSequences(): Promise<Sequence[]> {
+try {
+const rows = await this.get<SequenceRow[]>(
+'SELECT id, name, content, fingerprint FROM sequences'
+);
+return rows.map(row => ({
+id: row.id,
+name: row.name,
+content: row.content,
+fingerprint: row.fingerprint
+}));
+} catch (error: any) {
+console.error('Failed to get sequences:', error);
+return [];
+}
+}
+
+async deleteSequence(id: number): Promise<void> {
+  try {
+    await this.run('DELETE FROM sequences WHERE id = ?', [id]);
+  } catch (error) {
+    console.error('Failed to delete sequence:', error);
+    throw error;
+  }
+}
+
+// Patch operations
+async createPatch(name: string, content: string, fingerprint: string, favorited: boolean = false, tags: string[] = []): Promise<number> {
+  try {
+    await this.run(
+      'INSERT INTO patches (name, content, fingerprint, favorited, tags) VALUES (?, ?, ?, ?, ?)',
+      [name, content, fingerprint, favorited ? 1 : 0, JSON.stringify(tags)]
+    );
+    return this.db!.lastID;
+  } catch (error: any) {
+    console.error('Failed to create patch:', error);
+    throw error;
+  }
+}
+
+async getPatchByFingerprint(fingerprint: string): Promise<Patch | undefined> {
+  try {
+    const row = await this.get<PatchRow>(
+      'SELECT id, name, content, fingerprint, favorited, tags FROM patches WHERE fingerprint = ?',
+      [fingerprint]
+    );
+    if (!row) return undefined;
+    return {
+      id: row.id,
+      name: row.name,
+      content: row.content,
+      fingerprint: row.fingerprint,
+      favorited: row.favorited === 1,
+      tags: row.tags ? JSON.parse(row.tags) : []
+    };
+  } catch (error: any) {
+    console.error('Failed to get patch by fingerprint:', error);
+    return undefined;
+  }
+}
+
+async getPatches(): Promise<Patch[]> {
+  try {
+    const rows = await this.get<PatchRow[]>(
+      'SELECT id, name, content, fingerprint, favorited, tags FROM patches'
+    );
+    return rows.map(row => ({
+      id: row.id,
+      name: row.name,
+      content: row.content,
+      fingerprint: row.fingerprint,
+      favorited: row.favorited === 1,
+      tags: row.tags ? JSON.parse(row.tags) : []
+    }));
+  } catch (error: any) {
+    console.error('Failed to get patches:', error);
+    return [];
+  }
+}
+
+async getBankByFingerprint(fingerprint: string): Promise<Bank | null> {
+  try {
+    const row = await this.get<BankRow>(
+      'SELECT id, name, libraryId, type, systemName, fingerprint FROM banks WHERE fingerprint = ?',
+      [fingerprint]
+    );
+    if (row) {
+      return {
+        id: row.id,
+        name: row.name,
+        libraryId: row.libraryId,
+        type: row.type,
+        systemName: row.systemName,
+        fingerprint: row.fingerprint
+      };
+    } catch (error: any) {
+      console.error('Failed to get bank by fingerprint:', error);
+      return undefined;
+    }
+  }
+
+  async getBanks(): Promise<Bank[]> {
+    try {
+      const rows = await this.get<BankRow[]>(
+        'SELECT id, name, libraryId, type, systemName, fingerprint FROM banks'
+      );
+      return rows.map(row => ({
+        id: row.id,
+        name: row.name,
+        libraryId: row.libraryId,
+        type: row.type,
+        systemName: row.systemName,
+        fingerprint: row.fingerprint
+      }));
+    } catch (error: any) {
+      console.error('Failed to get banks:', error);
+      return [];
+    }
+  }
+
+  // Add a public clearAllTables method for test isolation
+  async clearAllTables(): Promise<void> {
+    try {
+      await this.run('DELETE FROM patches');
+      await this.run('DELETE FROM banks');
+      await this.run('DELETE FROM sequences');
+      await this.run('DELETE FROM libraries');
+    } catch (error) {
+      console.error('Failed to clear tables:', error);
+      throw error;
+    }
+  }
+
+  // Library operations
+  async getLibraryByFingerprint(fingerprint: string): Promise<{ id: number; name: string; fingerprint: string } | null> {
+    return this.get<{ id: number; name: string; fingerprint: string }>(
+      'SELECT id, name, fingerprint FROM libraries WHERE fingerprint = ?',
+      [fingerprint]
+    );
+  async close(): Promise<void> {
+    if (this.db) {
+      await new Promise<void>((resolve, reject) => {
+        this.db!.close((err) => err ? reject(err) : resolve());
+      });
+      this.db = null;
+    }
+  } 
+}
+
+let _dbManager: DatabaseManager | null = null;
+
+export async function getDbManager(): Promise<DatabaseManager> {
+  if (!_dbManager) {
+    _dbManager = await DatabaseManager.create();
+  }
+  return _dbManager;
+}
+
+export { calculateChecksum };

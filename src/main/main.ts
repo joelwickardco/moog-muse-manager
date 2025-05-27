@@ -13,6 +13,21 @@ const bankManager = new BankManager(appDbPath);
 const patchManager = new PatchManager(appDbPath);
 const patchSequenceManager = new PatchSequenceManager(appDbPath);
 
+// Function to initialize the database
+const initializeDatabase = async () => {
+  try {
+    // Initialize each manager
+    await libraryManager.initialize();
+    await bankManager.initialize();
+    await patchManager.initialize();
+    await patchSequenceManager.initialize();
+    console.log('Database initialized successfully.');
+  } catch (error) {
+    console.error('Error initializing database:', error);
+    app.quit(); // Quit the app if initialization fails
+  }
+};
+
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (require('electron-squirrel-startup')) {
   app.quit();
@@ -39,10 +54,12 @@ const createWindow = (): void => {
   }
 };
 
-// This method will be called when Electron has finished
-// initialization and is ready to create browser windows.
-// Some APIs can only be used after this event occurs.
-app.on('ready', createWindow);
+// This method will be called when Electron has finished initialization
+// and is ready to create browser windows.
+app.on('ready', async () => {
+  await initializeDatabase(); // Initialize the database before creating the window
+  createWindow();
+});
 
 // Quit when all windows are closed, except on macOS. There, it's common
 // for applications and their menu bar to stay active until the user quits

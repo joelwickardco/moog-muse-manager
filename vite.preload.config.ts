@@ -3,7 +3,7 @@ import path from 'path';
 
 export default defineConfig({
   build: {
-    outDir: '.vite/build',
+    outDir: '.vite/build/preload',
     emptyOutDir: true,
     rollupOptions: {
       external: ['sqlite3'],

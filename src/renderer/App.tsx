@@ -110,7 +110,6 @@ const App: React.FC = () => {
       <main>
         <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
           <div className="mt-4">
-            <h2 className="text-xl font-semibold">Imported Patches</h2>
             <ul className="mt-2 space-y-2">
               {patches.map((patch, index) => (
                 <li key={index} className="bg-white p-4 rounded shadow">
@@ -122,13 +121,6 @@ const App: React.FC = () => {
                       className="h-4 w-4 text-blue-600"
                     />
                     <span className="font-medium text-gray-900 min-w-[200px]">{patch.name}</span>
-                    <span className="text-gray-500 min-w-[100px]">Bank: {patch.bank}</span>
-                    <span className="text-gray-500 min-w-[100px]">Library: {patch.library}</span>
-                    {patch.custom && (
-                      <span className="bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded">
-                        Custom
-                      </span>
-                    )}
                     <input
                       type="text"
                       placeholder="Add tags"
@@ -136,7 +128,6 @@ const App: React.FC = () => {
                       onChange={(e) => handlePatchEdit(index, 'tags', e.target.value.split(',').map(tag => tag.trim()))}
                       className="border rounded px-2 py-1 flex-grow"
                     />
-                    <span className="text-gray-500 text-xs font-mono">{patch.checksum}</span>
                   </div>
                 </li>
               ))}

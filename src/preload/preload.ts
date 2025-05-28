@@ -1,9 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 interface Patch {
-  path: string;
   name: string;
-  loved: boolean;
+  favorited: boolean;
   tags: string[];
   bank: string;
   library: string;

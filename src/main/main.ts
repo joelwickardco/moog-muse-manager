@@ -128,7 +128,7 @@ ipcMain.handle('load-patches', () => {
 ipcMain.handle('load-libraries', async () => {
   try {
     const libraries = await libraryManager.getAll();
-    return libraries.map(library => library.name);
+    return libraries;
   } catch (error) {
     console.error('Error loading libraries:', error);
     throw error;
@@ -144,6 +144,11 @@ ipcMain.handle('load-banks-by-library', async (event, libraryId: number) => {
     console.error('Error loading banks by library:', error);
     throw error;
   }
+});
+
+// IPC handler for getting patches by library
+ipcMain.handle('get-patches-by-library', async (_, libraryId: number) => {
+  return await patchManager.getPatchesByLibrary(libraryId);
 });
 
 // IPC handler for updating patch metadata

@@ -21,6 +21,10 @@ export class PatchManager extends BaseDatabaseManager {
     INSERT: 'INSERT INTO patches (bank_id, name, fingerprint, content, favorited, tags, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     GET_BY_ID: 'SELECT id, bank_id, name, fingerprint, content, favorited, tags, created_at, updated_at FROM patches WHERE id = ?',
     GET_ALL: 'SELECT id, bank_id, name, fingerprint, content, favorited, tags, created_at, updated_at FROM patches',
+    GET_BY_LIBRARY: `SELECT p.id, p.bank_id, p.name, p.fingerprint, p.content, p.favorited, p.tags, p.created_at, p.updated_at 
+      FROM patches p
+      INNER JOIN banks b ON p.bank_id = b.id
+      WHERE b.library_id = ?`,
     EXISTS: 'SELECT 1 FROM patches WHERE fingerprint = ?',
     DELETE: 'DELETE FROM patches WHERE id = ?',
     UPDATE_NAME: 'UPDATE patches SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
@@ -217,6 +221,15 @@ export class PatchManager extends BaseDatabaseManager {
       favorited: row.favorited === 1 ? 1 : 0,
       tags: row.tags ? JSON.parse(row.tags) : [],
       bank_id: bankId
+    }));
+  }
+
+  async getPatchesByLibrary(libraryId: number): Promise<Patch[]> {
+    const rows = await this.all<Patch>(PatchManager.SQL.GET_BY_LIBRARY, [libraryId]);
+    return rows.map(row => ({
+      ...row,
+      favorited: row.favorited === 1 ? 1 : 0,
+      tags: row.tags ? JSON.parse(row.tags) : []
     }));
   }
 }

@@ -23,6 +23,7 @@ export interface Patch extends DatabaseRow {
   tags: string;
   created_at: string;
   updated_at: string;
+  library: string;
 }
 
 export interface PatchSequence extends DatabaseRow {

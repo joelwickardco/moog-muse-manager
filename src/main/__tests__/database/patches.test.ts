@@ -2,8 +2,10 @@ import { PatchManager } from '../../database/patches';
 import { LibraryManager } from '../../database/libraries';
 import { BankManager } from '../../database/banks';
 import { DatabaseError } from '../../database/errors';
-import * as path from 'path';
-import * as fs from 'fs/promises';
+import path from 'path';
+import * as fs from 'fs';
+import * as os from 'os';
+import { Patch } from '../../database/types';
 
 declare global {
   namespace NodeJS {
@@ -13,7 +15,11 @@ declare global {
   }
 }
 
-global.testPatchId = undefined;
+function getTempDbPath() {
+  return path.join(os.tmpdir(), `patches-test-${Date.now()}-${Math.random().toString(36).substring(2, 15)}.db`);
+}
+
+let testPatchId: number | undefined = undefined;
 
 // Add custom matcher for error types
 expect.extend({
@@ -52,23 +58,21 @@ describe('PatchManager', () => {
   let patchManager: PatchManager;
   let libraryManager: LibraryManager;
   let bankManager: BankManager;
-  const testDbPath = path.join('/tmp/test-app-data', 'patches.db');
+  let testDbPath: string;
   let bankId: number;
 
-  beforeEach(async (): Promise<void> => {
-    // Create test directory if it doesn't exist
-    const testDir = path.dirname(testDbPath);
-    await fs.mkdir(testDir, { recursive: true });
-    
-    // Create the database managers
+  beforeEach(async () => {
+    testDbPath = getTempDbPath();
+    if (fs.existsSync(testDbPath)) {
+      fs.unlinkSync(testDbPath);
+    }
     libraryManager = new LibraryManager(testDbPath);
     bankManager = new BankManager(testDbPath);
     patchManager = new PatchManager(testDbPath);
-    
-    // Initialize the database
-    await patchManager.initialize();
-    await bankManager.initialize();
+
     await libraryManager.initialize();
+    await bankManager.initialize();
+    await patchManager.initialize();
 
     // Create a test library
     const libraryId = await libraryManager.create('Test Library', 'test-library-fingerprint');
@@ -77,7 +81,7 @@ describe('PatchManager', () => {
     bankId = await bankManager.create(libraryId, 'Test Bank', 'Test Bank', 'test-bank-fingerprint');
     
     // Create a test patch
-    global.testPatchId = await patchManager.create(
+    testPatchId = await patchManager.create(
       bankId,
       'Test Patch',
       'test-patch-fingerprint',
@@ -85,57 +89,15 @@ describe('PatchManager', () => {
     );
   });
 
-  afterEach(async (): Promise<void> => {
-    // Clean up test data
-    try {
-      // Delete patch associations with banks
-      const patches = await patchManager.getAll();
-      const banks = await bankManager.getAll();
-      for (const patch of patches) {
-        for (const bank of banks) {
-          await patchManager.removeFromBank(patch.id, bank.id);
-        }
-      }
-      
-      // Delete patches
-      for (const patch of patches) {
-        await patchManager.delete(patch.id);
-      }
-      
-      // Delete banks
-      for (const bank of banks) {
-        await bankManager.delete(bank.id);
-      }
-      
-      // Delete libraries
-      const libraries = await libraryManager.getAll();
-      for (const library of libraries) {
-        await libraryManager.delete(library.id);
-      }
-      
-      // Verify all tables are empty
-      const patchCount = (await patchManager.getAll()).length;
-      const bankCount = (await bankManager.getAll()).length;
-      const libraryCount = (await libraryManager.getAll()).length;
-      const bankPatchCount = (await patchManager.getAll()).length;
-      
-      if (patchCount || bankCount || libraryCount || bankPatchCount) {
-        throw new Error('Failed to clean up test database');
-      }
-    } catch (error) {
-      // Ignore cleanup errors
-    }
-    
-    // Close the database connections
-    await patchManager.close();
-    await bankManager.close();
-    await libraryManager.close();
-
-    // Delete the test database file
-    try {
-      await fs.unlink(testDbPath);
-    } catch (error) {
-      // Ignore if file doesn't exist
+  afterEach(async () => {
+    await patchManager.cleanup();
+    await bankManager.cleanup();
+    await libraryManager.cleanup();
+    patchManager.close();
+    bankManager.close();
+    libraryManager.close();
+    if (fs.existsSync(testDbPath)) {
+      fs.unlinkSync(testDbPath);
     }
   });
 
@@ -163,7 +125,7 @@ describe('PatchManager', () => {
     });
 
     it('should create and retrieve a patch', async () => {
-      const patch = await patchManager.getById(global.testPatchId);
+      const patch = await patchManager.getById(testPatchId!);
       
       expect(patch).toBeDefined();
       expect(patch?.name).toBe('Test Patch');
@@ -194,9 +156,9 @@ describe('PatchManager', () => {
 
     it('should update patch name', async () => {
       const newName = 'Updated Patch Name';
-      await patchManager.updateName(global.testPatchId, newName);
+      await patchManager.updateName(testPatchId!, newName);
       
-      const patch = await patchManager.getById(global.testPatchId);
+      const patch = await patchManager.getById(testPatchId!);
       expect(patch?.name).toBe(newName);
     });
 
@@ -207,7 +169,7 @@ describe('PatchManager', () => {
     });
 
     it('should update patch content', async () => {
-      await patchManager.updateContent(global.testPatchId, JSON.stringify({
+      await patchManager.updateContent(testPatchId!, JSON.stringify({
         'parameters': {
           'oscillator1': {
             'waveform': 'sawtooth',
@@ -216,7 +178,7 @@ describe('PatchManager', () => {
         }
       }));
       
-      const patch = await patchManager.getById(global.testPatchId);
+      const patch = await patchManager.getById(testPatchId!);
       expect(patch?.content).toBe(JSON.stringify({
         'parameters': {
           'oscillator1': {
@@ -228,16 +190,16 @@ describe('PatchManager', () => {
     });
 
     it('should update patch favorite status', async () => {
-      await patchManager.updateFavorite(global.testPatchId, true);
+      await patchManager.updateFavorite(testPatchId!, true);
       
-      const patch = await patchManager.getById(global.testPatchId);
+      const patch = await patchManager.getById(testPatchId!);
       expect(patch?.favorited).toBe(1);
     });
 
     it('should update patch tags', async () => {
-      await patchManager.updateTags(global.testPatchId, ['tag1', 'tag2']);
+      await patchManager.updateTags(testPatchId!, ['tag1', 'tag2']);
       
-      const patch = await patchManager.getById(global.testPatchId);
+      const patch = await patchManager.getById(testPatchId!);
       expect(patch?.tags).toEqual(['tag1', 'tag2']);
     });
 
@@ -252,28 +214,96 @@ describe('PatchManager', () => {
       const bankId2 = await bankManager.create(originalBank.library_id, 'Test Bank 2', 'Test Bank 2', 'test-bank-fingerprint-2');
       
       // Add patch to both banks
-      await patchManager.addToBank(global.testPatchId, bankId);
-      await patchManager.addToBank(global.testPatchId, bankId2);
+      await patchManager.addToBank(testPatchId!, bankId);
+      await patchManager.addToBank(testPatchId!, bankId2);
       
       // Verify bank_patches table entries
-      const bankPatches1 = await patchManager.getBankPatches(global.testPatchId, bankId);
-      const bankPatches2 = await patchManager.getBankPatches(global.testPatchId, bankId2);
+      const bankPatches1 = await patchManager.getBankPatches(testPatchId!, bankId);
+      const bankPatches2 = await patchManager.getBankPatches(testPatchId!, bankId2);
       
       expect(bankPatches1).toBeDefined();
       expect(bankPatches2).toBeDefined();
       expect(bankPatches1[0]?.bank_id).toBe(bankId);
-      expect(bankPatches1[0]?.patch_id).toBe(global.testPatchId);
+      expect(bankPatches1[0]?.patch_id).toBe(testPatchId);
       expect(bankPatches2[0]?.bank_id).toBe(bankId2);
-      expect(bankPatches2[0]?.patch_id).toBe(global.testPatchId);
+      expect(bankPatches2[0]?.patch_id).toBe(testPatchId);
     });
 
     it('should remove patch from bank', async () => {
-      await patchManager.removeFromBank(global.testPatchId, bankId);
+      await patchManager.removeFromBank(testPatchId!, bankId);
       
       // Verify patch is no longer in bank
       const patchesInBank = await patchManager.getPatchesByBank(bankId);
-      const patch = patchesInBank.find(p => p.id === global.testPatchId);
+      const patch = patchesInBank.find(p => p.id === testPatchId);
       expect(patch).toBeUndefined();
+    });
+  });
+
+  describe('getPatchesByLibrary', () => {
+    it('should return patches for a specific library', async () => {
+      // Create a library
+      const libraryId = await libraryManager.create('Test Library A', 'test-fingerprint-A');
+
+      // Create a bank in the library
+      const bankId = await bankManager.create(libraryId, 'Test Bank A', 'Test Bank A', 'bank-fingerprint-A');
+
+      // Create patches in the bank
+      const patch1Id = await patchManager.create(
+        bankId,
+        'Test Patch 1',
+        'patch1-fingerprint',
+        'patch1-content',
+        1,
+        ['test', 'patch1']
+      );
+
+      const patch2Id = await patchManager.create(
+        bankId,
+        'Test Patch 2',
+        'patch2-fingerprint',
+        'patch2-content',
+        0,
+        ['test', 'patch2']
+      );
+
+      // Create another library and bank
+      const otherLibraryId = await libraryManager.create('Other Library B', 'other-fingerprint-B');
+      const otherBankId = await bankManager.create(otherLibraryId, 'Other Bank B', 'Other Bank B', 'other-bank-fingerprint-B');
+
+      // Create a patch in the other bank
+      await patchManager.create(
+        otherBankId,
+        'Other Patch',
+        'other-patch-fingerprint',
+        'other-patch-content',
+        0,
+        ['other']
+      );
+
+      // Get patches for the first library
+      const patches = await patchManager.getPatchesByLibrary(libraryId);
+
+      // Verify results
+      expect(patches).toHaveLength(2);
+      expect(patches.map(p => p.name)).toContain('Test Patch 1');
+      expect(patches.map(p => p.name)).toContain('Test Patch 2');
+      expect(patches.map(p => p.name)).not.toContain('Other Patch');
+
+      // Verify patch details
+      const patch1 = patches.find(p => p.name === 'Test Patch 1');
+      expect(patch1).toBeDefined();
+      expect(patch1?.favorited).toBe(1);
+      expect(patch1?.tags).toEqual(['test', 'patch1']);
+
+      const patch2 = patches.find(p => p.name === 'Test Patch 2');
+      expect(patch2).toBeDefined();
+      expect(patch2?.favorited).toBe(0);
+      expect(patch2?.tags).toEqual(['test', 'patch2']);
+    });
+
+    it('should return empty array for non-existent library', async () => {
+      const patches = await patchManager.getPatchesByLibrary(999);
+      expect(patches).toHaveLength(0);
     });
   });
 });

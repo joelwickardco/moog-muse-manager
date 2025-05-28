@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Patch } from '../main/database/types';
+import React, { useState, useEffect, useRef } from 'react';
+import { Patch, Library } from '../main/database/types';
 
 // Define the type for the window object with our electron API
 declare global {
@@ -9,34 +9,21 @@ declare global {
       exportPatches: (patches: string[]) => Promise<boolean>;
       loadPatches: () => Promise<Patch[]>;
       updatePatch: (path: string, updates: Partial<Patch>) => Promise<boolean>;
-      loadLibraries: () => Promise<string[]>;
+      loadLibraries: () => Promise<Library[]>;
       loadBanksByLibrary: (library: number) => Promise<{ name: string }[]>;
+      getPatchesByLibrary: (libraryId: number) => Promise<Patch[]>;
     }
   }
 }
 
 const App: React.FC = () => {
   const [patches, setPatches] = useState<Patch[]>([]);
-  const [libraries, setLibraries] = useState<string[]>([]);
+  const [libraries, setLibraries] = useState<Library[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [selectedLibrary, setSelectedLibrary] = useState<string>('all');
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  // Load saved patches when component mounts
-  useEffect(() => {
-    const loadSavedPatches = async () => {
-      try {
-        const savedPatches = await window.electronAPI.loadPatches();
-        console.log('Loaded patches from database:', savedPatches);
-        console.log('Patches with custom flag:', savedPatches.filter(p => p.custom).length);
-        setPatches(savedPatches);
-      } catch (error) {
-        console.error('Error loading saved patches:', error);
-      }
-    };
-
-    loadSavedPatches();
-  }, []);
-
-  // Load libraries when component mounts
+  // Only load libraries on mount
   useEffect(() => {
     const loadLibraries = async () => {
       try {
@@ -46,14 +33,14 @@ const App: React.FC = () => {
         console.error('Error loading libraries:', error);
       }
     };
-
     loadLibraries();
   }, []);
 
   const handleImport = async (): Promise<void> => {
     try {
-      const importedPatches = await window.electronAPI.importPatches();
-      setPatches(importedPatches as Patch[]);
+      await window.electronAPI.importPatches();
+      const loadedPatches = await window.electronAPI.loadPatches();
+      setPatches(loadedPatches);
       setMenuOpen(false);
     } catch (error) {
       console.error('Error importing patches:', error);
@@ -71,11 +58,40 @@ const App: React.FC = () => {
 
     // Persist changes to database
     try {
-      await window.electronAPI.updatePatch(patch.path, updates);
+      await window.electronAPI.updatePatch(patch.id.toString(), updates);
     } catch (error) {
       console.error('Error updating patch:', error);
     }
   };
+
+  const handleLibraryChange = async (libraryId: string) => {
+    setSelectedLibrary(libraryId);
+    try {
+      if (libraryId === 'all') {
+        const allPatches = await window.electronAPI.loadPatches();
+        setPatches(allPatches);
+      } else {
+        const libraryPatches = await window.electronAPI.getPatchesByLibrary(parseInt(libraryId));
+        setPatches(libraryPatches);
+      }
+    } catch (error) {
+      console.error('Error loading patches:', error);
+    }
+  };
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!menuOpen) return;
+    function handleClickOutside(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [menuOpen]);
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -84,7 +100,7 @@ const App: React.FC = () => {
           <h1 className="text-3xl font-bold text-gray-900">
             Moog Muse Manager
           </h1>
-          <div className="relative">
+          <div className="relative" ref={menuRef}>
             <button
               className="text-gray-500 hover:text-gray-700"
               onClick={() => setMenuOpen(!menuOpen)}
@@ -110,13 +126,31 @@ const App: React.FC = () => {
       <main>
         <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
           <div className="mt-4">
+            <div className="mb-4">
+              <label htmlFor="library-filter" className="block text-sm font-medium text-gray-700">
+                Filter by Library
+              </label>
+              <select
+                id="library-filter"
+                value={selectedLibrary}
+                onChange={(e) => handleLibraryChange(e.target.value)}
+                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+              >
+                <option value="all">All Libraries</option>
+                {libraries.map((library) => (
+                  <option key={library.id} value={library.id.toString()}>
+                    {library.name}
+                  </option>
+                ))}
+              </select>
+            </div>
             <ul className="mt-2 space-y-2">
               {patches.map((patch, index) => (
                 <li key={index} className="bg-white p-4 rounded shadow">
                   <div className="flex items-center space-x-4">
                     <input
                       type="checkbox"
-                      checked={patch.favorited}
+                      checked={Boolean(patch.favorited)}
                       onChange={(e) => handlePatchEdit(index, 'favorited', e.target.checked)}
                       className="h-4 w-4 text-blue-600"
                     />
@@ -124,7 +158,7 @@ const App: React.FC = () => {
                     <input
                       type="text"
                       placeholder="Add tags"
-                      value={patch.tags.join(', ')}
+                      value={Array.isArray(patch.tags) ? patch.tags.join(', ') : ''}
                       onChange={(e) => handlePatchEdit(index, 'tags', e.target.value.split(',').map(tag => tag.trim()))}
                       className="border rounded px-2 py-1 flex-grow"
                     />

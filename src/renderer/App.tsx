@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Patch, Library } from '../main/database/types';
+import { Accordion, AccordionItemWrapper } from './components/Accordion';
 
 // Define the type for the window object with our electron API
 declare global {
@@ -22,6 +23,7 @@ const App: React.FC = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [selectedLibrary, setSelectedLibrary] = useState<string>('all');
   const menuRef = useRef<HTMLDivElement>(null);
+  const [openBankIndex, setOpenBankIndex] = useState<number | null>(null);
 
   // Only load libraries on mount
   useEffect(() => {
@@ -47,18 +49,16 @@ const App: React.FC = () => {
     }
   };
 
-  const handlePatchEdit = async (index: number, key: string, value: boolean | string | string[]) => {
-    const updatedPatches = [...patches];
-    const patch = updatedPatches[index];
-    const updates = { [key]: value };
-    
-    // Update local state
-    updatedPatches[index] = { ...patch, ...updates };
-    setPatches(updatedPatches);
-
-    // Persist changes to database
+  const handlePatchEdit = async (patchId: string, field: keyof Patch, value: any) => {
     try {
-      await window.electronAPI.updatePatch(patch.id.toString(), updates);
+      const success = await window.electronAPI.updatePatch(patchId, { [field]: value });
+      if (success) {
+        setPatches(patches.map(patch => 
+          patch.id.toString() === patchId 
+            ? { ...patch, [field]: value }
+            : patch
+        ));
+      }
     } catch (error) {
       console.error('Error updating patch:', error);
     }
@@ -66,18 +66,24 @@ const App: React.FC = () => {
 
   const handleLibraryChange = async (libraryId: string) => {
     setSelectedLibrary(libraryId);
-    try {
-      if (libraryId === 'all') {
-        const allPatches = await window.electronAPI.loadPatches();
-        setPatches(allPatches);
-      } else {
-        const libraryPatches = await window.electronAPI.getPatchesByLibrary(parseInt(libraryId));
-        setPatches(libraryPatches);
-      }
-    } catch (error) {
-      console.error('Error loading patches:', error);
+    if (libraryId === 'all') {
+      const allPatches = await window.electronAPI.loadPatches();
+      setPatches(allPatches);
+    } else {
+      const libraryPatches = await window.electronAPI.getPatchesByLibrary(parseInt(libraryId));
+      setPatches(libraryPatches);
     }
   };
+
+  // Group patches by bank
+  const patchesByBank = patches.reduce((acc, patch) => {
+    const bank = patch.bank || 'Uncategorized';
+    if (!acc[bank]) {
+      acc[bank] = [];
+    }
+    acc[bank].push(patch);
+    return acc;
+  }, {} as Record<string, Patch[]>);
 
   // Close menu on outside click
   useEffect(() => {
@@ -94,81 +100,151 @@ const App: React.FC = () => {
   }, [menuOpen]);
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
-          <h1 className="text-3xl font-bold text-gray-900">
-            Moog Muse Manager
-          </h1>
-          <div className="relative" ref={menuRef}>
-            <button
-              className="text-gray-500 hover:text-gray-700"
-              onClick={() => setMenuOpen(!menuOpen)}
-              aria-label="Menu"
-            >
-              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
-            {menuOpen && (
-              <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-10">
+    <div className="min-h-screen bg-gray-900 text-white p-4">
+      <div className="max-w-7xl mx-auto">
+        <div className="mb-6">
+          <select
+            value={selectedLibrary}
+            onChange={(e) => handleLibraryChange(e.target.value)}
+            className="w-full p-2 bg-gray-800 border border-gray-700 rounded"
+          >
+            <option value="all">All Libraries</option>
+            {libraries.map((library) => (
+              <option key={library.id} value={library.id}>
+                {library.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {selectedLibrary !== 'all' && (
+          <div className="space-y-4">
+            {Object.entries(patchesByBank).map(([bank, bankPatches], index) => (
+              <div key={bank} className="border border-gray-700 rounded-lg overflow-hidden">
                 <button
-                  className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                  onClick={handleImport}
+                  className="w-full px-4 py-3 text-left bg-gray-800 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onClick={() => {
+                    const newOpenIndex = openBankIndex === index ? -1 : index;
+                    setOpenBankIndex(newOpenIndex);
+                  }}
                 >
-                  Import Library
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </header>
-      <main>
-        <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-          <div className="mt-4">
-            <div className="mb-4">
-              <label htmlFor="library-filter" className="block text-sm font-medium text-gray-700">
-                Filter by Library
-              </label>
-              <select
-                id="library-filter"
-                value={selectedLibrary}
-                onChange={(e) => handleLibraryChange(e.target.value)}
-                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
-              >
-                <option value="all">All Libraries</option>
-                {libraries.map((library) => (
-                  <option key={library.id} value={library.id.toString()}>
-                    {library.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <ul className="mt-2 space-y-2">
-              {patches.map((patch, index) => (
-                <li key={index} className="bg-white p-4 rounded shadow">
-                  <div className="flex items-center space-x-4">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(patch.favorited)}
-                      onChange={(e) => handlePatchEdit(index, 'favorited', e.target.checked)}
-                      className="h-4 w-4 text-blue-600"
-                    />
-                    <span className="font-medium text-gray-900 min-w-[200px]">{patch.name}</span>
-                    <input
-                      type="text"
-                      placeholder="Add tags"
-                      value={Array.isArray(patch.tags) ? patch.tags.join(', ') : ''}
-                      onChange={(e) => handlePatchEdit(index, 'tags', e.target.value.split(',').map(tag => tag.trim()))}
-                      className="border rounded px-2 py-1 flex-grow"
-                    />
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium text-gray-200">
+                      {bank} ({bankPatches.length} patches)
+                    </span>
+                    <svg
+                      className={`w-5 h-5 transform transition-transform ${
+                        openBankIndex === index ? 'rotate-180' : ''
+                      }`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 9l-7 7-7-7"
+                      />
+                    </svg>
                   </div>
-                </li>
-              ))}
-            </ul>
+                </button>
+                <div
+                  className={`overflow-hidden transition-all duration-300 ease-in-out ${
+                    openBankIndex === index ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'
+                  }`}
+                >
+                  <div className="p-4 bg-gray-900">
+                    <div className="space-y-2">
+                      {bankPatches.map((patch) => (
+                        <div
+                          key={patch.id}
+                          className="p-3 bg-gray-800 rounded hover:bg-gray-700 transition-colors"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <h3 className="font-medium">{patch.name}</h3>
+                              <p className="text-sm text-gray-400">{patch.path}</p>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <label className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  checked={patch.favorited}
+                                  onChange={() =>
+                                    handlePatchEdit(patch.id.toString(), 'favorited', !patch.favorited)
+                                  }
+                                  className="form-checkbox h-4 w-4 text-blue-500"
+                                />
+                                <span className="text-sm">Favorite</span>
+                              </label>
+                            </div>
+                          </div>
+                          {patch.tags && patch.tags.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {patch.tags.map((tag: string, index: number) => (
+                                <span
+                                  key={index}
+                                  className="px-2 py-1 bg-blue-900 text-blue-200 text-xs rounded"
+                                >
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
-        </div>
-      </main>
+        )}
+
+        {selectedLibrary === 'all' && (
+          <div className="space-y-2">
+            {patches.map((patch) => (
+              <div
+                key={patch.id}
+                className="p-3 bg-gray-800 rounded hover:bg-gray-700 transition-colors"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-medium">{patch.name}</h3>
+                    <p className="text-sm text-gray-400">{patch.path}</p>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <label className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={patch.favorited}
+                        onChange={() =>
+                          handlePatchEdit(patch.id.toString(), 'favorited', !patch.favorited)
+                        }
+                        className="form-checkbox h-4 w-4 text-blue-500"
+                      />
+                      <span className="text-sm">Favorite</span>
+                    </label>
+                  </div>
+                </div>
+                {patch.tags && patch.tags.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {patch.tags.map((tag: string, index: number) => (
+                      <span
+                        key={index}
+                        className="px-2 py-1 bg-blue-900 text-blue-200 text-xs rounded"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

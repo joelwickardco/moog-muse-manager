@@ -1,11 +1,12 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'path';
 import fs from 'fs';
-import { importLibrary } from './services/importLibrary';
 import { LibraryManager } from './database/libraries';
 import { BankManager } from './database/banks';
 import { PatchManager } from './database/patches';
 import { PatchSequenceManager } from './database/patch-sequences';
+import { importLibrary } from './services/importLibrary';
+import { Patch } from './database/types';
 
 const appDbPath = path.join(app.getPath('userData'), 'app.db');
 const libraryManager = new LibraryManager(appDbPath);
@@ -78,35 +79,53 @@ app.on('activate', () => {
   }
 });
 
-// IPC handler for importing patches
+// Register IPC handlers
 ipcMain.handle('import-patches', async () => {
   const { filePaths } = await dialog.showOpenDialog({
     properties: ['openDirectory'],
   });
-
-  console.log('Selected directory:', filePaths[0]);
 
   if (filePaths.length === 0) {
     return [];
   }
 
   let rootDir = filePaths[0];
+  console.log('Selected directory:', rootDir);
 
-  try {
-    const result = await importLibrary(rootDir, libraryManager, bankManager, patchManager, patchSequenceManager);
-    console.log('Import successful:', result);
-  } catch (error) {
-    console.error('Import failed:', error);
-  }
-
-  // If Library/ exists, use it as the root
+  // Check if the selected directory is a library directory
   const libraryPath = path.join(rootDir, 'Library');
   if (fs.existsSync(libraryPath) && fs.statSync(libraryPath).isDirectory()) {
     rootDir = libraryPath;
-    console.log('Using Library/ as root directory:', rootDir);
   }
-  
-  return patchManager.getAll();
+
+  return importLibrary(rootDir, libraryManager, bankManager, patchManager, patchSequenceManager);
+});
+
+ipcMain.handle('load-patches', async () => {
+  return await patchManager.getAll();
+});
+
+ipcMain.handle('update-patch', async (_, patchId: string, updates: Partial<Patch>) => {
+  const id = parseInt(patchId);
+  if (updates.favorited !== undefined) {
+    await patchManager.updateFavorite(id, updates.favorited);
+  }
+  if (updates.tags) {
+    await patchManager.updateTags(id, updates.tags);
+  }
+  return true;
+});
+
+ipcMain.handle('load-libraries', async () => {
+  return await libraryManager.getAll();
+});
+
+ipcMain.handle('load-banks-by-library', async (_, libraryId: number) => {
+  return await bankManager.getBanksByLibrary(libraryId);
+});
+
+ipcMain.handle('get-patches-by-library', async (_, libraryId: number) => {
+  return await patchManager.getPatchesByLibrary(libraryId);
 });
 
 // Add new IPC handler for loading banks
@@ -118,44 +137,6 @@ ipcMain.handle('load-banks', () => {
 ipcMain.handle('get-patches-for-bank', (_, bankId: number) => {
   return bankManager.getPatches(bankId);
 });
-
-// IPC handler for loading saved patches
-ipcMain.handle('load-patches', () => {
-  return patchManager.getAll();
-});
-
-// IPC handler for loading libraries
-ipcMain.handle('load-libraries', async () => {
-  try {
-    const libraries = await libraryManager.getAll();
-    return libraries;
-  } catch (error) {
-    console.error('Error loading libraries:', error);
-    throw error;
-  }
-});
-
-// IPC handler for loading banks by library
-ipcMain.handle('load-banks-by-library', async (event, libraryId: number) => {
-  try {
-    const banks = await bankManager.getBanksByLibrary(libraryId);
-    return banks;
-  } catch (error) {
-    console.error('Error loading banks by library:', error);
-    throw error;
-  }
-});
-
-// IPC handler for getting patches by library
-ipcMain.handle('get-patches-by-library', async (_, libraryId: number) => {
-  return await patchManager.getPatchesByLibrary(libraryId);
-});
-
-// IPC handler for updating patch metadata
-// ipcMain.handle('update-patch', (_, path: string, updates: Partial<Patch>) => {
-//   patchManager.updatePatchMetadata(path, updates);
-//   return true;
-// });
 
 // Clean up database connection when app quits
 app.on('before-quit', () => {

@@ -5,6 +5,7 @@ export interface DatabaseRow {
 export interface Library extends DatabaseRow {
   name: string;
   fingerprint: string;
+  path: string;
 }
 
 export interface Bank extends DatabaseRow {
@@ -17,10 +18,13 @@ export interface Bank extends DatabaseRow {
 export interface Patch extends DatabaseRow {
   bank_id: number;
   name: string;
+  bank: string;
+  path: string;
+  favorited: boolean;
+  tags: string[];
+  library_id: number;
   fingerprint: string;
   content: string;
-  favorited: number;
-  tags: string;
   created_at: string;
   updated_at: string;
   library: string;

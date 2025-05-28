@@ -21,7 +21,7 @@ export class PatchManager extends BaseDatabaseManager {
     INSERT: 'INSERT INTO patches (bank_id, name, fingerprint, content, favorited, tags, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     GET_BY_ID: 'SELECT id, bank_id, name, fingerprint, content, favorited, tags, created_at, updated_at FROM patches WHERE id = ?',
     GET_ALL: 'SELECT id, bank_id, name, fingerprint, content, favorited, tags, created_at, updated_at FROM patches',
-    GET_BY_LIBRARY: `SELECT p.id, p.bank_id, p.name, p.fingerprint, p.content, p.favorited, p.tags, p.created_at, p.updated_at 
+    GET_BY_LIBRARY: `SELECT b.name as bank, p.id, p.bank_id, p.name, p.fingerprint, p.content, p.favorited, p.tags, p.created_at, p.updated_at 
       FROM patches p
       INNER JOIN banks b ON p.bank_id = b.id
       WHERE b.library_id = ?`,

@@ -9,6 +9,8 @@ declare global {
       exportPatches: (patches: string[]) => Promise<boolean>;
       loadPatches: () => Promise<Patch[]>;
       updatePatch: (path: string, updates: Partial<Patch>) => Promise<boolean>;
+      loadLibraries: () => Promise<string[]>;
+      loadBanksByLibrary: (library: number) => Promise<{ name: string }[]>;
     }
   }
 }
@@ -22,6 +24,9 @@ const App: React.FC = () => {
     library: '',
     custom: false
   });
+  const [libraries, setLibraries] = useState<string[]>([]);
+  const [uniqueBanks, setUniqueBanks] = useState<string[]>([]);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // Load saved patches when component mounts
   useEffect(() => {
@@ -39,34 +44,26 @@ const App: React.FC = () => {
     loadSavedPatches();
   }, []);
 
+  // Load libraries when component mounts
+  useEffect(() => {
+    const loadLibraries = async () => {
+      try {
+        const loadedLibraries = await window.electronAPI.loadLibraries();
+        setLibraries(loadedLibraries);
+      } catch (error) {
+        console.error('Error loading libraries:', error);
+      }
+    };
+
+    loadLibraries();
+  }, []);
+
   const handleImport = async (): Promise<void> => {
     try {
       const importedPatches = await window.electronAPI.importPatches();
       setPatches(importedPatches as Patch[]);
     } catch (error) {
       console.error('Error importing patches:', error);
-    }
-  };
-
-  const handleFilterChange = async (key: string, value: boolean | string): Promise<void> => {
-    const newFilter = { ...filter, [key]: value };
-    setFilter(newFilter);
-
-    // Check if all filters are cleared
-    const allFiltersCleared = Object.entries(newFilter).every(([_k, v]) => {
-      if (typeof v === 'boolean') return !v;
-      return v === '';
-    });
-
-    if (allFiltersCleared) {
-      console.log('All filters cleared, reloading patches from database...');
-      try {
-        const savedPatches = await window.electronAPI.loadPatches();
-        console.log('Loaded patches from database:', savedPatches);
-        setPatches(savedPatches);
-      } catch (error) {
-        console.error('Error reloading patches:', error);
-      }
     }
   };
 
@@ -87,119 +84,45 @@ const App: React.FC = () => {
     }
   };
 
-  const filteredPatches = patches.filter(patch => {
-    const isLoved = filter.loved ? patch.loved : true;
-    const matchesTag = filter.tag ? patch.tags.includes(filter.tag) : true;
-    const matchesBank = filter.bank ? patch.bank === filter.bank : true;
-    const matchesLibrary = filter.library ? patch.library === filter.library : true;
-    const matchesCustom = filter.custom ? patch.custom : true;
-    
-    if (filter.custom) {
-      console.log(`Patch ${patch.name} custom status:`, {
-        isCustom: patch.custom,
-        matchesCustom,
-        filterCustom: filter.custom
-      });
-    }
-    
-    return isLoved && matchesTag && matchesBank && matchesLibrary && matchesCustom;
-  });
-
   // Get unique banks and libraries for filter dropdowns
-  const uniqueBanks = Array.from(new Set(patches.map(patch => patch.bank))).sort();
-  const uniqueLibraries = Array.from(new Set(patches.map(patch => patch.library))).sort();
+  const uniqueLibraries = libraries.sort();
 
   return (
     <div className="min-h-screen bg-gray-100">
       <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
           <h1 className="text-3xl font-bold text-gray-900">
             Moog Muse Manager
           </h1>
+          <div className="relative">
+            <button
+              className="text-gray-500 hover:text-gray-700"
+              onClick={() => setMenuOpen(!menuOpen)}
+              aria-label="Menu"
+            >
+              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-10">
+                <button
+                  className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  onClick={handleImport}
+                >
+                  Import Library
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
       <main>
         <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-          <button
-            onClick={handleImport}
-            className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-          >
-            Import Patches
-          </button>
-          <div className="mt-4">
-            <h2 className="text-xl font-semibold">Filter Patches</h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-              <label className="flex items-center space-x-2">
-                <input
-                  id="loved-filter"
-                  className="h-4 w-4 text-blue-600"
-                  type="checkbox"
-                  checked={filter.loved}
-                  onChange={(e) => handleFilterChange('loved', e.target.checked)}
-                />
-                <span>Loved</span>
-              </label>
-              <label className="flex items-center space-x-2">
-                <input
-                  id="custom-filter"
-                  className="h-4 w-4 text-green-600"
-                  type="checkbox"
-                  checked={filter.custom}
-                  onChange={(e) => handleFilterChange('custom', e.target.checked)}
-                />
-                <span>Custom</span>
-              </label>
-              <div>
-                <label htmlFor="bank-filter" className="block text-sm font-medium text-gray-700">
-                  Bank
-                </label>
-                <select
-                  id="bank-filter"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  value={filter.bank}
-                  onChange={(e) => handleFilterChange('bank', e.target.value)}
-                >
-                  <option value="">All Banks</option>
-                  {uniqueBanks.map((bank) => (
-                    <option key={bank} value={bank}>{bank}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label htmlFor="library-filter" className="block text-sm font-medium text-gray-700">
-                  Library
-                </label>
-                <select
-                  id="library-filter"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  value={filter.library}
-                  onChange={(e) => handleFilterChange('library', e.target.value)}
-                >
-                  <option value="">All Libraries</option>
-                  {uniqueLibraries.map((lib) => (
-                    <option key={lib} value={lib}>{lib}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label htmlFor="tags-filter" className="block text-sm font-medium text-gray-700">
-                  Tags
-                </label>
-                <input
-                  id="tags-filter"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  type="text"
-                  placeholder="Filter by tag"
-                  value={filter.tag}
-                  onChange={(e) => handleFilterChange('tag', e.target.value)}
-                />
-              </div>
-            </div>
-          </div>
           <div className="mt-4">
             <h2 className="text-xl font-semibold">Imported Patches</h2>
             <ul className="mt-2 space-y-2">
-              {filteredPatches.map((patch, index) => (
+              {patches.map((patch, index) => (
                 <li key={index} className="bg-white p-4 rounded shadow">
                   <div className="flex items-center space-x-4">
                     <input

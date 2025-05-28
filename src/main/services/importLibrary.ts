@@ -115,8 +115,9 @@ export async function importLibrary(libraryPath: string, libraryManager: Library
         const patchName = path.basename(mmpFile, '.mmp');
         const patchContent = await fs.readFile(mmpFilePath, 'utf8');
         const patchFingerprint = await calculateSHA256(mmpFilePath);
+        const tags = getTagsFromPatchName(patchName, bankName);
         console.log(`Creating patch: ${patchName} with fingerprint ${patchFingerprint}`);
-        const patchId = await patchManager.create(bankId, patchName, patchFingerprint, patchContent, 0, []);
+        const patchId = await patchManager.create(bankId, patchName, patchFingerprint, patchContent, 0, tags);
         await bankManager.associateWithPatch(bankId, patchId);
         imported.patches++;
       }
@@ -207,6 +208,31 @@ export function registerImportLibraryIPC(zipPath: string, libraryManager: Librar
     return importLibrary(zipPath, libraryManager, bankManager, patchManager, patchSequenceManager);
   });
 }
+
+// Helper function to determine tags based on patch name
+const getTagsFromPatchName = (patchName: string, bankName: string): string[] => {
+  const tags: string[] = [];
+
+  // Example conditions for adding tags
+  if (patchName.includes('bass') || bankName.includes('bass')) {
+    tags.push('bass');
+  }
+  if (patchName.includes('lead') || bankName.includes('lead')) {
+    tags.push('lead');
+  }
+  if (patchName.includes('pad') || bankName.includes('pad')) {
+    tags.push('pad');
+  }
+  if (patchName.includes('string') || bankName.includes('string')) {
+    tags.push('strings');
+  }
+  if (patchName.includes('pluck') || bankName.includes('pluck')) {
+    tags.push('pluck');
+  }
+  // Add more conditions as needed
+
+  return tags;
+};
 
 // Helper function for zip extraction
 // async function extractZip(zipPath: string, outputPath: string): Promise<void> {

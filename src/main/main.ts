@@ -124,6 +124,28 @@ ipcMain.handle('load-patches', () => {
   return patchManager.getAll();
 });
 
+// IPC handler for loading libraries
+ipcMain.handle('load-libraries', async () => {
+  try {
+    const libraries = await libraryManager.getAll();
+    return libraries.map(library => library.name);
+  } catch (error) {
+    console.error('Error loading libraries:', error);
+    throw error;
+  }
+});
+
+// IPC handler for loading banks by library
+ipcMain.handle('load-banks-by-library', async (event, libraryId: number) => {
+  try {
+    const banks = await bankManager.getBanksByLibrary(libraryId);
+    return banks;
+  } catch (error) {
+    console.error('Error loading banks by library:', error);
+    throw error;
+  }
+});
+
 // IPC handler for updating patch metadata
 // ipcMain.handle('update-patch', (_, path: string, updates: Partial<Patch>) => {
 //   patchManager.updatePatchMetadata(path, updates);

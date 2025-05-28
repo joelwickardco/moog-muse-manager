@@ -17,15 +17,7 @@ declare global {
 
 const App: React.FC = () => {
   const [patches, setPatches] = useState<Patch[]>([]);
-  const [filter, setFilter] = useState({ 
-    loved: false, 
-    tag: '',
-    bank: '',
-    library: '',
-    custom: false
-  });
   const [libraries, setLibraries] = useState<string[]>([]);
-  const [uniqueBanks, setUniqueBanks] = useState<string[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
 
   // Load saved patches when component mounts
@@ -62,6 +54,7 @@ const App: React.FC = () => {
     try {
       const importedPatches = await window.electronAPI.importPatches();
       setPatches(importedPatches as Patch[]);
+      setMenuOpen(false);
     } catch (error) {
       console.error('Error importing patches:', error);
     }
@@ -83,9 +76,6 @@ const App: React.FC = () => {
       console.error('Error updating patch:', error);
     }
   };
-
-  // Get unique banks and libraries for filter dropdowns
-  const uniqueLibraries = libraries.sort();
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -127,8 +117,8 @@ const App: React.FC = () => {
                   <div className="flex items-center space-x-4">
                     <input
                       type="checkbox"
-                      checked={patch.loved}
-                      onChange={(e) => handlePatchEdit(index, 'loved', e.target.checked)}
+                      checked={patch.favorited}
+                      onChange={(e) => handlePatchEdit(index, 'favorited', e.target.checked)}
                       className="h-4 w-4 text-blue-600"
                     />
                     <span className="font-medium text-gray-900 min-w-[200px]">{patch.name}</span>

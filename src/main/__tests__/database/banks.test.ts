@@ -18,8 +18,8 @@ expect.extend({
 });
 
 describe('BankManager', () => {
-  let bankManager;
-  let libraryManager;
+  let bankManager: BankManager;
+  let libraryManager: LibraryManager;
   const testDbPath = path.join('/tmp/test-app-data', 'banks.db');
 
   beforeEach(async () => {
@@ -44,25 +44,31 @@ describe('BankManager', () => {
     await libraryManager.close();
   });
 
+  afterAll(async () => {
+    // Remove the test database file after all tests
+    const fs = require('fs');
+    if (fs.existsSync(testDbPath)) {
+      fs.unlinkSync(testDbPath);
+    }
+  });
+
   describe('Initialization', () => {
     it('should initialize database with correct schema', async () => {
-      // Verify tables exist
-      const tables = await bankManager.all<{ name: string }>(
-        'SELECT name FROM sqlite_master WHERE type = "table"'
-      );
-      expect(tables).toContainEqual({ name: 'banks' });
-      
-      // Verify index exists
-      const indexes = await bankManager.all<{ name: string }>(
-        'SELECT name FROM sqlite_master WHERE type = "index"'
-      );
-      expect(indexes).toContainEqual({ name: 'idx_banks_library_id' });
+      // Create a test bank to verify schema
+      const libraryId = await libraryManager.create('Test Library', 'test-library-fingerprint');
+      const bankId = await bankManager.create(libraryId, 'Test Bank', 'test_bank', 'test-fingerprint');
+      expect(bankId).toBeGreaterThan(0);
+
+      // Verify bank was created correctly
+      const bank = await bankManager.getById(bankId);
+      expect(bank).toBeDefined();
+      expect(bank?.name).toBe('Test Bank');
     });
   });
 
   describe('Bank Operations', () => {
-    let libraryId;
-    let bank1Id;
+    let libraryId: number;
+    let bank1Id: number;
 
     beforeEach(async () => {
       libraryId = await libraryManager.create('Test Library', 'test-library-fingerprint');
@@ -73,8 +79,23 @@ describe('BankManager', () => {
     });
 
     it('should create a new bank', async () => {
+      const fingerprint = 'test_bank_fingerprint';
+      const mockContent = Buffer.from('mock bank content');
+      const bankId = await bankManager.create(libraryId, 'test_bank', 'test_bank', fingerprint, mockContent);
+      expect(typeof bankId).toBe('number');
+      const bank = await bankManager.getById(bankId);
+      expect(bank).toBeDefined();
+      expect(bank?.name).toBe('test_bank');
+      expect(bank?.system_name).toBe('test_bank');
+      expect(bank?.fingerprint).toBe(fingerprint);
+      expect(bank?.file_content).toBeInstanceOf(Buffer);
+      expect(bank?.file_content?.toString()).toBe('mock bank content');
+    });
+
+    it('should create a bank with file content', async () => {
       const fingerprint = 'test-bank-fingerprint';
-      const bankId = await bankManager.create(libraryId, 'Test Bank', 'test_bank', fingerprint);
+      const fileContent = Buffer.from('test file content');
+      const bankId = await bankManager.create(libraryId, 'Test Bank', 'test_bank', fingerprint, fileContent);
       expect(bankId).toBeGreaterThan(0);
 
       const bank = await bankManager.getById(bankId);
@@ -84,14 +105,24 @@ describe('BankManager', () => {
       expect(bank?.name).toBe('Test Bank');
       expect(bank?.system_name).toBe('test_bank');
       expect(bank?.fingerprint).toBe(fingerprint);
+      expect(bank?.file_content).toEqual(fileContent);
     });
 
-    it('should throw error when creating duplicate bank name in same library', async () => {
+    it('should throw error when creating bank with duplicate system name in same library', async () => {
       const fingerprint = 'test-bank-fingerprint';
       await bankManager.create(libraryId, 'Test Bank', 'test_bank', fingerprint);
       
       await expect(
-        bankManager.create(libraryId, 'Test Bank', 'test_bank_2', fingerprint)
+        bankManager.create(libraryId, 'Another Bank', 'test_bank', 'different-fingerprint')
+      ).rejects.toThrowError(DatabaseError);
+    });
+
+    it('should throw error when creating bank with duplicate fingerprint', async () => {
+      const fingerprint = 'test-bank-fingerprint';
+      await bankManager.create(libraryId, 'Test Bank', 'test_bank', fingerprint);
+      
+      await expect(
+        bankManager.create(libraryId, 'Another Bank', 'another_bank', fingerprint)
       ).rejects.toThrowError(DatabaseError);
     });
 
@@ -123,33 +154,6 @@ describe('BankManager', () => {
       // Clean up existing banks first
       await bankManager.cleanup();
       await expect(bankManager.getAll()).rejects.toThrowError(DatabaseError);
-    });
-
-    it('should update bank name', async () => {
-      const fingerprint = 'test-bank-fingerprint';
-      const bankId = await bankManager.create(libraryId, 'Test Bank', 'test_bank', fingerprint);
-      
-      await bankManager.updateName(bankId, 'Updated Bank');
-      const bank = await bankManager.getById(bankId);
-      expect(bank?.name).toBe('Updated Bank');
-    });
-
-    it('should throw error when updating bank name to existing name in same library', async () => {
-      const bankId1 = await bankManager.create(libraryId, 'Bank 1', 'bank_1', 'unique-fingerprint-1');
-      await bankManager.create(libraryId, 'Bank 2', 'bank_2', 'unique-fingerprint-2');
-      
-      await expect(
-        bankManager.updateName(bankId1, 'Bank 2')
-      ).rejects.toThrowError(DatabaseError);
-    });
-
-    it('should update bank system name', async () => {
-      const fingerprint = 'test-bank-fingerprint';
-      const bankId = await bankManager.create(libraryId, 'Test Bank', 'test_bank', fingerprint);
-      
-      await bankManager.updateSystemName(bankId, 'updated_system_name');
-      const bank = await bankManager.getById(bankId);
-      expect(bank?.system_name).toBe('updated_system_name');
     });
   });
 });

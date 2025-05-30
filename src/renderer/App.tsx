@@ -17,6 +17,11 @@ declare global {
   }
 }
 
+// Add a helper type for tracking tag input per patch
+interface TagInputState {
+  [patchId: string]: string;
+}
+
 const App: React.FC = () => {
   const [patches, setPatches] = useState<Patch[]>([]);
   const [libraries, setLibraries] = useState<Library[]>([]);
@@ -24,6 +29,7 @@ const App: React.FC = () => {
   const [selectedLibrary, setSelectedLibrary] = useState<string>('all');
   const menuRef = useRef<HTMLDivElement>(null);
   const [openBankIndex, setOpenBankIndex] = useState<number | null>(null);
+  const [tagInputs, setTagInputs] = useState<TagInputState>({});
 
   // Only load libraries on mount
   useEffect(() => {
@@ -98,6 +104,28 @@ const App: React.FC = () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [menuOpen]);
+
+  // Add a handler for tag input change
+  const handleTagInputChange = (patchId: string, value: string) => {
+    setTagInputs((prev) => ({ ...prev, [patchId]: value }));
+  };
+
+  // Add a handler for adding a tag
+  const handleAddTag = async (patchId: string) => {
+    const patch = patches.find((p) => p.id.toString() === patchId);
+    const newTag = tagInputs[patchId]?.trim();
+    if (!patch || !newTag || patch.tags.includes(newTag)) return;
+    const updatedTags = [...patch.tags, newTag];
+    const success = await window.electronAPI.updatePatch(patchId, { tags: updatedTags });
+    if (success) {
+      setPatches(
+        patches.map((p) =>
+          p.id.toString() === patchId ? { ...p, tags: updatedTags } : p
+        )
+      );
+      setTagInputs((prev) => ({ ...prev, [patchId]: '' }));
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-4">
@@ -192,6 +220,33 @@ const App: React.FC = () => {
                               ))}
                             </div>
                           )}
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-xs text-gray-400">Tags:</span>
+                            <span className="text-xs">
+                              {Array.isArray(patch.tags) && patch.tags.length > 0
+                                ? patch.tags.join(', ')
+                                : 'No tags'}
+                            </span>
+                            {/* Tag input */}
+                            <input
+                              type="text"
+                              className="ml-2 p-1 text-xs rounded bg-gray-800 border border-gray-700 text-white"
+                              placeholder="Add tag"
+                              value={tagInputs[patch.id] || ''}
+                              onChange={(e) => handleTagInputChange(patch.id.toString(), e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleAddTag(patch.id.toString());
+                              }}
+                              style={{ width: 80 }}
+                            />
+                            <button
+                              className="text-xs px-2 py-1 bg-blue-600 rounded hover:bg-blue-700"
+                              onClick={() => handleAddTag(patch.id.toString())}
+                              disabled={!tagInputs[patch.id]?.trim() || patch.tags.includes(tagInputs[patch.id]?.trim())}
+                            >
+                              Add
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -240,6 +295,33 @@ const App: React.FC = () => {
                     ))}
                   </div>
                 )}
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-xs text-gray-400">Tags:</span>
+                  <span className="text-xs">
+                    {Array.isArray(patch.tags) && patch.tags.length > 0
+                      ? patch.tags.join(', ')
+                      : 'No tags'}
+                  </span>
+                  {/* Tag input */}
+                  <input
+                    type="text"
+                    className="ml-2 p-1 text-xs rounded bg-gray-800 border border-gray-700 text-white"
+                    placeholder="Add tag"
+                    value={tagInputs[patch.id] || ''}
+                    onChange={(e) => handleTagInputChange(patch.id.toString(), e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleAddTag(patch.id.toString());
+                    }}
+                    style={{ width: 80 }}
+                  />
+                  <button
+                    className="text-xs px-2 py-1 bg-blue-600 rounded hover:bg-blue-700"
+                    onClick={() => handleAddTag(patch.id.toString())}
+                    disabled={!tagInputs[patch.id]?.trim() || patch.tags.includes(tagInputs[patch.id]?.trim())}
+                  >
+                    Add
+                  </button>
+                </div>
               </div>
             ))}
           </div>

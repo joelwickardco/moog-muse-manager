@@ -13,6 +13,7 @@ export interface Bank extends DatabaseRow {
   name: string;
   system_name: string;
   fingerprint: string;
+  file_content?: Buffer;
 }
 
 export interface Patch extends DatabaseRow {
@@ -61,6 +62,7 @@ export interface BankRow {
   name: string;
   system_name: string;
   fingerprint: string;
+  file_content?: Buffer;
 }
 
 export interface PatchRow {

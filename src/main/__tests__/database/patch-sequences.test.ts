@@ -3,7 +3,8 @@ import { LibraryManager } from '../../database/libraries';
 import { BankManager } from '../../database/banks';
 import { PatchSequence } from '../../database/types';
 import * as path from 'path';
-import * as fs from 'fs/promises';
+import * as fs from 'fs';
+import * as fsPromises from 'fs/promises';
 
 declare global {
   var testSequenceId: number | undefined;
@@ -40,7 +41,7 @@ describe('PatchSequenceManager', () => {
   beforeEach(async (): Promise<void> => {
     // Create test directory if it doesn't exist
     const testDir = path.dirname(testDbPath);
-    await fs.mkdir(testDir, { recursive: true });
+    await fsPromises.mkdir(testDir, { recursive: true });
     
     // Create the database managers
     libraryManager = new LibraryManager(testDbPath);
@@ -52,35 +53,42 @@ describe('PatchSequenceManager', () => {
     await bankManager.initialize();
     await libraryManager.initialize();
 
-    // Create a test library
-    const libraryId = await libraryManager.create('Test Library', 'test-library-fingerprint');
+    // Clean up any existing data
+    await sequenceManager.cleanup();
+    await bankManager.cleanup();
+    await libraryManager.cleanup();
+
+    // Create a test library with unique name and fingerprint
+    const uniqueId = Date.now().toString();
+    const libraryId = await libraryManager.create(
+      `Test Library ${uniqueId}`,
+      `test-library-fingerprint-${uniqueId}`
+    );
     
     // Create a test bank in the library
-    await bankManager.create(libraryId, 'Test Bank', 'Test Bank', 'test-bank-fingerprint');
+    await bankManager.create(
+      libraryId,
+      `Test Bank ${uniqueId}`,
+      `Test Bank ${uniqueId}`,
+      `test-bank-fingerprint-${uniqueId}`
+    );
   });
 
   afterEach(async (): Promise<void> => {
     // Clean up test data
     try {
-      // Delete sequences
-      const sequences = await sequenceManager.getAll();
-      for (const sequence of sequences) {
-        await sequenceManager.delete(sequence.id);
-      }
-      
-      // Delete banks
-      const banks = await bankManager.getAll();
-      for (const bank of banks) {
-        await bankManager.delete(bank.id);
-      }
-      
-      // Delete libraries
-      const libraries = await libraryManager.getAll();
-      for (const library of libraries) {
-        await libraryManager.delete(library.id);
-      }
+      await sequenceManager.cleanup();
+      await bankManager.cleanup();
+      await libraryManager.cleanup();
     } catch (error) {
       console.error('Error cleaning up test data:', error);
+    }
+  });
+
+  afterAll(async (): Promise<void> => {
+    // Remove the test database file after all tests
+    if (fs.existsSync(testDbPath)) {
+      fs.unlinkSync(testDbPath);
     }
   });
 

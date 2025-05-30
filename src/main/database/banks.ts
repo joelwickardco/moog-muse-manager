@@ -1,21 +1,27 @@
 import { BaseDatabaseManager } from './base';
 import { Bank, BankPatchRow, BankPatchSequenceRow } from './types';
-import { NotFoundError } from './errors';
+import { NotFoundError, QueryError } from './errors';
 
 
 export class BankManager extends BaseDatabaseManager {
   private static readonly SQL = {
-    CREATE_TABLE: `CREATE TABLE IF NOT EXISTS banks (
-      id INTEGER PRIMARY KEY,
-      library_id INTEGER NOT NULL,
-      name TEXT NOT NULL,
-      system_name TEXT NOT NULL,
-      fingerprint TEXT NOT NULL UNIQUE,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE
-    )`,
-    CREATE_INDEX: 'CREATE INDEX IF NOT EXISTS idx_banks_library_id ON banks (library_id)',
+    CREATE_TABLE: `
+      CREATE TABLE IF NOT EXISTS banks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        library_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        system_name TEXT NOT NULL,
+        fingerprint TEXT NOT NULL UNIQUE,
+        file_content BLOB,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (library_id) REFERENCES libraries(id),
+        UNIQUE(library_id, system_name)
+      )
+    `,
+    CREATE_INDEX: `
+      CREATE INDEX IF NOT EXISTS idx_banks_library_id ON banks(library_id)
+    `,
     CREATE_PATCHES_TABLE: `CREATE TABLE IF NOT EXISTS bank_patches (
       id INTEGER PRIMARY KEY,
       bank_id INTEGER NOT NULL,
@@ -30,14 +36,15 @@ export class BankManager extends BaseDatabaseManager {
       FOREIGN KEY (bank_id) REFERENCES banks(id) ON DELETE CASCADE,
       FOREIGN KEY (patch_sequence_id) REFERENCES patch_sequences(id) ON DELETE CASCADE
     )`,
-    INSERT: 'INSERT INTO banks (library_id, name, system_name, fingerprint) VALUES (?, ?, ?, ?)',
+    INSERT: `
+      INSERT INTO banks (library_id, name, system_name, fingerprint, file_content)
+      VALUES (?, ?, ?, ?, ?)
+    `,
     GET_BY_ID: 'SELECT * FROM banks WHERE id = ?',
     GET_BY_SYSTEM_NAME: 'SELECT * FROM banks WHERE library_id = ? AND system_name = ?',
     GET_ALL: 'SELECT * FROM banks',
-    EXISTS: 'SELECT 1 FROM banks WHERE name = ? AND library_id = ?',
-    DELETE: 'DELETE FROM banks WHERE id = ?',
-    UPDATE_NAME: 'UPDATE banks SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-    UPDATE_SYSTEM_NAME: 'UPDATE banks SET system_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+    EXISTS: 'SELECT 1 FROM banks WHERE system_name = ? AND library_id = ?',
+    DELETE: 'DELETE FROM banks WHERE id = ?'
   };
 
   async initialize(): Promise<void> {
@@ -55,9 +62,12 @@ export class BankManager extends BaseDatabaseManager {
     await this.run('DELETE FROM banks');
   }
 
-  async create(libraryId: number, name: string, systemName: string, fingerprint: string): Promise<number> {
+  async create(libraryId: number, name: string, systemName: string, fingerprint: string, fileContent?: Buffer): Promise<number> {
     try {
-      await this.run(BankManager.SQL.INSERT, [libraryId, name, systemName, fingerprint]);
+      const result = await this.run(
+        BankManager.SQL.INSERT,
+        [libraryId, name, systemName, fingerprint, fileContent]
+      );
       const row = await this.get<{ id: number }>('SELECT last_insert_rowid() as id');
       if (!row) {
         throw new NotFoundError('Failed to get last inserted ID');
@@ -65,7 +75,11 @@ export class BankManager extends BaseDatabaseManager {
       return row.id;
     } catch (error) {
       if (error instanceof Error && error.message.includes('SQLITE_CONSTRAINT')) {
-        throw new NotFoundError(`Bank with name ${name} or fingerprint ${fingerprint} already exists`);
+        if (error.message.includes('fingerprint')) {
+          throw new QueryError(`Bank with fingerprint ${fingerprint} already exists`, BankManager.SQL.INSERT, [libraryId, name, systemName, fingerprint, fileContent]);
+        } else {
+          throw new QueryError(`Bank with system name ${systemName} already exists in this library`, BankManager.SQL.INSERT, [libraryId, name, systemName, fingerprint, fileContent]);
+        }
       }
       throw error;
     }
@@ -87,34 +101,6 @@ export class BankManager extends BaseDatabaseManager {
       throw new NotFoundError('No banks found');
     }
     return rows;
-  }
-
-  async updateName(id: number, newName: string): Promise<void> {
-    const bank = await this.getById(id);
-    if (!bank) {
-      throw new NotFoundError(`Bank with ID ${id} not found`);
-    }
-    // Check if another bank with this name exists in the same library
-    const exists = await this.get<{ exists: number }>(
-      'SELECT 1 FROM banks WHERE name = ? AND library_id = ? AND id != ?',
-      [newName, bank.library_id, id]
-    );
-    if (exists) {
-      throw new NotFoundError(`Bank with name ${newName} already exists in library ${bank.library_id}`);
-    }
-    await this.transaction(async () => {
-      await this.run(BankManager.SQL.UPDATE_NAME, [newName, id]);
-    });
-  }
-
-  async updateSystemName(id: number, newSystemName: string): Promise<void> {
-    const bank = await this.getById(id);
-    if (!bank) {
-      throw new NotFoundError(`Bank with ID ${id} not found`);
-    }
-    await this.transaction(async () => {
-      await this.run(BankManager.SQL.UPDATE_SYSTEM_NAME, [newSystemName, id]);
-    });
   }
 
   async associateWithPatch(bankId: number, patchId: number): Promise<void> {

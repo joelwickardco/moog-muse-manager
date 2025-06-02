@@ -53,18 +53,18 @@ describe('App', () => {
     ]);
 
     mockElectronAPI.getPatchesByLibrary.mockResolvedValue([
-      {
+        {
         id: 1,
-        name: 'Patch 1',
+          name: 'Patch 1',
         bank: 'Bank 1',
         path: '/path/to/patch1',
         favorited: false,
         tags: ['tag1', 'tag2'],
         library_id: 1,
-      },
-      {
+        },
+        {
         id: 2,
-        name: 'Patch 2',
+          name: 'Patch 2',
         bank: 'Bank 2',
         path: '/path/to/patch2',
         favorited: true,
@@ -85,7 +85,7 @@ describe('App', () => {
   });
 
   it('should load and display patches when a library is selected', async () => {
-    render(<App />);
+      render(<App />);
 
     // Wait for libraries to load
     await waitFor(() => {
@@ -132,7 +132,7 @@ describe('App', () => {
   });
 
   it('should display patches grouped by bank when a library is selected', async () => {
-    render(<App />);
+      render(<App />);
 
     // Wait for libraries to load
     await waitFor(() => {

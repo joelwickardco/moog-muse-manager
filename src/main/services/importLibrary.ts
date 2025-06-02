@@ -1,11 +1,11 @@
 import { ipcMain } from 'electron';
 import * as path from 'path';
+import * as fs from 'fs/promises';
 import { LibraryManager } from '../database/libraries';
 import { BankManager } from '../database/banks';
 import { PatchManager } from '../database/patches';
 import { PatchSequenceManager } from '../database/patch-sequences';
 import { calculateSHA256 } from '../utils';
-import fs from 'fs/promises';
 
 // Helper function to convert fs.promises to fs
 const fsPromises = {
@@ -25,6 +25,28 @@ interface ImportResult {
     patches: number;
     sequences: number;
   };
+  libraryId: number;
+}
+
+async function createBank(
+  bankDir: string,
+  bankFilePath: string,
+  libraryId: number,
+  bankManager: BankManager
+): Promise<number> {
+  const bankName = path.basename(bankFilePath, '.bank');
+  const bankSystemName = bankDir;
+  const bankFingerprint = await calculateSHA256(bankFilePath);
+  const bankContent = await fs.readFile(bankFilePath);
+  console.log(`Creating bank: ${bankName} (${bankSystemName}) with fingerprint ${bankFingerprint}`);
+  return await bankManager.create(libraryId, bankName, bankSystemName, bankFingerprint, bankContent);
+}
+
+asynk function processBank(
+  bankDir: string,
+
+): Promise<number> {
+
 }
 
 export async function importLibrary(libraryPath: string, libraryManager: LibraryManager, bankManager: BankManager, patchManager: PatchManager, patchSequenceManager: PatchSequenceManager): Promise<ImportResult> {
@@ -63,6 +85,7 @@ export async function importLibrary(libraryPath: string, libraryManager: Library
           patches: 0,
           sequences: 0,
         },
+        libraryId: 0,
       };
     }
 
@@ -91,11 +114,7 @@ export async function importLibrary(libraryPath: string, libraryManager: Library
       const bankFilePath = path.join(bankPath, bankFile);
 
       // Create bank
-      const bankName = path.basename(bankFile, '.bank');
-      const bankSystemName = bankDir;
-      const bankFingerprint = await calculateSHA256(bankFilePath);
-      console.log(`Creating bank: ${bankName} (${bankSystemName}) with fingerprint ${bankFingerprint}`);
-      const bankId = await bankManager.create(libraryId, bankName, bankSystemName, bankFingerprint);
+      const bankId = await createBank(bankDir, bankFilePath, libraryId, bankManager);
       imported.banks++;
 
       // Process patches
@@ -115,9 +134,9 @@ export async function importLibrary(libraryPath: string, libraryManager: Library
         const patchName = path.basename(mmpFile, '.mmp');
         const patchContent = await fs.readFile(mmpFilePath, 'utf8');
         const patchFingerprint = await calculateSHA256(mmpFilePath);
-        const tags = getTagsFromPatchName(patchName, bankName);
+        const tags = getTagsFromPatchName(patchName, path.basename(bankFile, '.bank'));
         console.log(`Creating patch: ${patchName} with fingerprint ${patchFingerprint}`);
-        const patchId = await patchManager.create(bankId, patchName, patchFingerprint, patchContent, 0, tags);
+        const patchId = await patchManager.create(patchName, patchFingerprint, patchContent, 0, tags);
         await bankManager.associateWithPatch(bankId, patchId);
         imported.patches++;
       }
@@ -145,8 +164,10 @@ export async function importLibrary(libraryPath: string, libraryManager: Library
       //const bankFingerprint = await calculateSHA256(seqBankPath);
       const bank = await bankManager.getBySystemName(libraryId, bankSystemName);
       if (!bank) {
-        console.log(`Sequence bank ${bankSystemName} not found`);
-        continue;
+        console.error(`Sequence bank ${bankSystemName} not found`);
+        // Delete the library and all its associated data
+        await libraryManager.delete(libraryId);
+        throw new Error(`Failed to find bank ${bankSystemName} for sequences`);
       }
       
       const seqDirs = await fs.readdir(seqBankPath);
@@ -166,13 +187,26 @@ export async function importLibrary(libraryPath: string, libraryManager: Library
           const seqContent = await fs.readFile(mmseqFilePath, 'utf8');
           const seqFingerprint = await calculateSHA256(mmseqFilePath);
           const seqName = path.basename(mmseqFile, '.mmseq');
-          const seqId = await patchSequenceManager.create(seqName, seqContent, seqFingerprint);
-          console.log(`Created sequence: ${seqName} with fingerprint ${seqFingerprint}`);
-          await bankManager.associateWithPatchSequence(bank.id, seqId);
+          
+          // Check if sequence already exists
+          const existingSequence = await patchSequenceManager.getByFingerprint(seqFingerprint);
+          let seqId: number;
+          
+          if (existingSequence) {
+            console.log(`Sequence ${seqName} already exists with fingerprint ${seqFingerprint}, reusing existing sequence`);
+            seqId = existingSequence.id;
+          } else {
+            console.log(`Creating new sequence: ${seqName} with fingerprint ${seqFingerprint}`);
+            seqId = await patchSequenceManager.create(seqName, seqFingerprint, seqContent);
+          }
+          
+          await bankManager.associateWithPatchSequence(bankId, seqId);
           imported.sequences++;
         } catch (error) {
-          console.log('Failed to import sequence: ', seqDir, error);
-          continue;
+          console.error('Failed to import sequence: ', seqDir, error);
+          // Delete the library and all its associated data
+          await libraryManager.delete(libraryId);
+          throw new Error(`Failed to import sequence ${seqDir}: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
       }
     }
@@ -186,6 +220,7 @@ export async function importLibrary(libraryPath: string, libraryManager: Library
       success: true,
       message: 'Library imported successfully',
       imported,
+      libraryId,
     };
   } catch (error) {
     console.error('Library import failed:', error);
@@ -198,6 +233,7 @@ export async function importLibrary(libraryPath: string, libraryManager: Library
         patches: 0,
         sequences: 0,
       },
+      libraryId: 0,
     };
   }
 }
@@ -233,6 +269,7 @@ const getTagsFromPatchName = (patchName: string, bankName: string): string[] => 
 
   return tags;
 };
+
 
 // Helper function for zip extraction
 // async function extractZip(zipPath: string, outputPath: string): Promise<void> {

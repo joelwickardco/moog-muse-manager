@@ -12,6 +12,8 @@ declare global {
       loadLibraries: () => Promise<Library[]>;
       loadBanksByLibrary: (library: number) => Promise<{ name: string }[]>;
       getPatchesByLibrary: (libraryId: number) => Promise<Patch[]>;
+      importLibrary: () => Promise<void>;
+      exportLibrary: (libraryId: number) => Promise<void>;
     }
   }
 }
@@ -28,5 +30,7 @@ contextBridge.exposeInMainWorld(
     loadLibraries: () => ipcRenderer.invoke('load-libraries'),
     loadBanksByLibrary: (library: number) => ipcRenderer.invoke('load-banks-by-library', library),
     getPatchesByLibrary: (libraryId: number) => ipcRenderer.invoke('get-patches-by-library', libraryId),
+    importLibrary: () => ipcRenderer.invoke('import-library'),
+    exportLibrary: (libraryId: number) => ipcRenderer.invoke('export-library', libraryId),
   }
 ); 

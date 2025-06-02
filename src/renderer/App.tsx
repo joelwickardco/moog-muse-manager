@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Patch, Library } from '../main/database/types';
 import { Accordion, AccordionItemWrapper } from './components/Accordion';
+import { AppMenu } from './components/AppMenu';
 
 // Define the type for the window object with our electron API
 declare global {
@@ -13,6 +14,8 @@ declare global {
       loadLibraries: () => Promise<Library[]>;
       loadBanksByLibrary: (library: number) => Promise<{ name: string }[]>;
       getPatchesByLibrary: (libraryId: number) => Promise<Patch[]>;
+      importLibrary: () => Promise<void>;
+      exportLibrary: (libraryId: number) => Promise<void>;
     }
   }
 }
@@ -127,8 +130,34 @@ const App: React.FC = () => {
     }
   };
 
+  const handleImportLibrary = async () => {
+    try {
+      await window.electronAPI.importLibrary();
+      const loadedLibraries = await window.electronAPI.loadLibraries();
+      setLibraries(loadedLibraries);
+    } catch (error) {
+      console.error('Error importing library:', error);
+    }
+  };
+
+  const handleExportLibrary = async () => {
+    if (selectedLibrary === 'all') {
+      console.error('Please select a library to export');
+      return;
+    }
+    try {
+      await window.electronAPI.exportLibrary(parseInt(selectedLibrary));
+    } catch (error) {
+      console.error('Error exporting library:', error);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-900 text-white p-4">
+      <AppMenu 
+        onImportLibrary={handleImportLibrary} 
+        onExportLibrary={handleExportLibrary}
+      />
       <div className="max-w-7xl mx-auto">
         <div className="mb-6">
           <select
@@ -268,17 +297,17 @@ const App: React.FC = () => {
                   <div>
                     <h3 className="font-medium">{patch.name}</h3>
                     <p className="text-sm text-gray-400">{patch.path}</p>
-                  </div>
+            </div>
                   <div className="flex items-center space-x-2">
                     <label className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={patch.favorited}
+                    <input
+                      type="checkbox"
+                      checked={patch.favorited}
                         onChange={() =>
                           handlePatchEdit(patch.id.toString(), 'favorited', !patch.favorited)
                         }
                         className="form-checkbox h-4 w-4 text-blue-500"
-                      />
+                    />
                       <span className="text-sm">Favorite</span>
                     </label>
                   </div>
@@ -303,8 +332,8 @@ const App: React.FC = () => {
                       : 'No tags'}
                   </span>
                   {/* Tag input */}
-                  <input
-                    type="text"
+                    <input
+                      type="text"
                     className="ml-2 p-1 text-xs rounded bg-gray-800 border border-gray-700 text-white"
                     placeholder="Add tag"
                     value={tagInputs[patch.id] || ''}
@@ -322,11 +351,11 @@ const App: React.FC = () => {
                     Add
                   </button>
                 </div>
-              </div>
-            ))}
+                  </div>
+              ))}
           </div>
         )}
-      </div>
+        </div>
     </div>
   );
 };

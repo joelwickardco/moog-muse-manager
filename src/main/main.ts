@@ -6,6 +6,7 @@ import { BankManager } from './database/banks';
 import { PatchManager } from './database/patches';
 import { PatchSequenceManager } from './database/patch-sequences';
 import { importLibrary } from './services/importLibrary';
+import { exportLibrary } from './services/exportLibrary';
 import { Patch } from './database/types';
 
 const appDbPath = path.join(app.getPath('userData'), 'app.db');
@@ -80,6 +81,43 @@ app.on('activate', () => {
 });
 
 // Register IPC handlers
+ipcMain.handle('export-library', async (_, libraryId: number) => {
+  const { filePaths } = await dialog.showOpenDialog({
+    properties: ['openDirectory'],
+  });
+
+  if (filePaths.length === 0) {
+    return;
+  }
+
+  const exportDir = filePaths[0];
+  console.log('Selected export directory:', exportDir);
+
+  await exportLibrary(
+    libraryId,
+    exportDir,
+    libraryManager,
+    bankManager,
+    patchManager,
+    patchSequenceManager
+  );
+});
+
+ipcMain.handle('import-library', async () => {
+  const { filePaths } = await dialog.showOpenDialog({
+    properties: ['openDirectory'],
+  });
+
+  if (filePaths.length === 0) {
+    return;
+  }
+
+  const rootDir = filePaths[0];
+  console.log('Selected directory:', rootDir);
+
+  await importLibrary(rootDir, libraryManager, bankManager, patchManager, patchSequenceManager);
+});
+
 ipcMain.handle('import-patches', async () => {
   const { filePaths } = await dialog.showOpenDialog({
     properties: ['openDirectory'],

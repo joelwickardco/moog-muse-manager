@@ -1,29 +1,34 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'path';
 import fs from 'fs';
-import { LibraryManager } from './database/libraries';
-import { BankManager } from './database/banks';
-import { PatchManager } from './database/patches';
-import { PatchSequenceManager } from './database/patch-sequences';
+import { DataSource } from 'typeorm';
+import { LibraryRepository } from './repositories/library.repository';
+import { BankRepository } from './repositories/bank.repository';
+import { PatchRepository } from './repositories/patch.repository';
+import { PatchSequenceRepository } from './repositories/patch-sequence.repository';
 import { importLibrary } from './services/importLibrary';
 import { exportLibrary } from './services/exportLibrary';
-import { Patch } from './database/types';
+import { Patch } from './entities/patch.entity';
+import { AppDataSource } from './data-source';
 
-const appDbPath = path.join(app.getPath('userData'), 'app.db');
-const libraryManager = new LibraryManager(appDbPath);
-const bankManager = new BankManager(appDbPath);
-const patchManager = new PatchManager(appDbPath);
-const patchSequenceManager = new PatchSequenceManager(appDbPath);
+// Initialize repositories
+let libraryRepo: LibraryRepository;
+let bankRepo: BankRepository;
+let patchRepo: PatchRepository;
+let patchSequenceRepo: PatchSequenceRepository;
 
 // Function to initialize the database
 const initializeDatabase = async () => {
   try {
-    // Initialize each manager
-    await libraryManager.initialize();
-    await bankManager.initialize();
-    await patchManager.initialize();
-    await patchSequenceManager.initialize();
+    // Initialize TypeORM DataSource
+    await AppDataSource.initialize();
     console.log('Database initialized successfully.');
+
+    // Initialize repositories
+    libraryRepo = new LibraryRepository(AppDataSource);
+    bankRepo = new BankRepository(AppDataSource);
+    patchRepo = new PatchRepository(AppDataSource);
+    patchSequenceRepo = new PatchSequenceRepository(AppDataSource);
   } catch (error) {
     console.error('Error initializing database:', error);
     app.quit(); // Quit the app if initialization fails
@@ -96,10 +101,7 @@ ipcMain.handle('export-library', async (_, libraryId: number) => {
   await exportLibrary(
     libraryId,
     exportDir,
-    libraryManager,
-    bankManager,
-    patchManager,
-    patchSequenceManager
+    AppDataSource
   );
 });
 
@@ -115,7 +117,7 @@ ipcMain.handle('import-library', async () => {
   const rootDir = filePaths[0];
   console.log('Selected directory:', rootDir);
 
-  await importLibrary(rootDir, libraryManager, bankManager, patchManager, patchSequenceManager);
+  await importLibrary(rootDir, AppDataSource);
 });
 
 ipcMain.handle('import-patches', async () => {
@@ -136,52 +138,53 @@ ipcMain.handle('import-patches', async () => {
     rootDir = libraryPath;
   }
 
-  return importLibrary(rootDir, libraryManager, bankManager, patchManager, patchSequenceManager);
-});
-
-ipcMain.handle('load-patches', async () => {
-  return await patchManager.getAll();
+  return importLibrary(rootDir, AppDataSource);
 });
 
 ipcMain.handle('update-patch', async (_, patchId: string, updates: Partial<Patch>) => {
   const id = parseInt(patchId);
   if (updates.favorited !== undefined) {
-    await patchManager.updateFavorite(id, updates.favorited);
+    await patchRepo.update(id, { favorited: updates.favorited });
   }
   if (updates.tags) {
-    await patchManager.updateTags(id, updates.tags);
+    await patchRepo.update(id, { tags: updates.tags });
   }
   return true;
 });
 
 ipcMain.handle('load-libraries', async () => {
-  return await libraryManager.getAll();
+  return await libraryRepo.findAll();
 });
 
 ipcMain.handle('load-banks-by-library', async (_, libraryId: number) => {
-  return await bankManager.getBanksByLibrary(libraryId);
+  return await bankRepo.findByLibraryId(libraryId);
 });
 
 ipcMain.handle('get-patches-by-library', async (_, libraryId: number) => {
-  return await patchManager.getPatchesByLibrary(libraryId);
+  const banks = await bankRepo.findByLibraryId(libraryId);
+  const patches = [];
+  for (const bank of banks) {
+    const bankPatches = await patchRepo.findByBankId(bank.id);
+    patches.push(...bankPatches);
+  }
+  return patches;
 });
 
 // Add new IPC handler for loading banks
-ipcMain.handle('load-banks', () => {
-  return bankManager.getAll();
+ipcMain.handle('load-banks', async () => {
+  return await bankRepo.findAll();
 });
 
 // Add new IPC handler for getting patches by bank
-ipcMain.handle('get-patches-for-bank', (_, bankId: number) => {
-  return bankManager.getPatches(bankId);
+ipcMain.handle('get-patches-for-bank', async (_, bankId: number) => {
+  return await patchRepo.findByBankId(bankId);
 });
 
 // Clean up database connection when app quits
-app.on('before-quit', () => {
-  patchManager.close();
-  bankManager.close();
-  libraryManager.close();
-  patchSequenceManager.close();
+app.on('before-quit', async () => {
+  if (AppDataSource.isInitialized) {
+    await AppDataSource.destroy();
+  }
 });
 
 // In this file you can include the rest of your app's specific main process

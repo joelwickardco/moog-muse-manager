@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { Patch, Library } from '../main/database/types';
+import { Patch } from '../main/entities/patch.entity';
+import { Library } from '../main/entities/library.entity';
 
 // Define the type for the window object with our electron API
 declare global {

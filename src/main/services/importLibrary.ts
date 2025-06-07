@@ -1,304 +1,265 @@
-import { ipcMain } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import { LibraryManager } from '../database/libraries';
-import { BankManager } from '../database/banks';
-import { PatchManager } from '../database/patches';
-import { PatchSequenceManager } from '../database/patch-sequences';
-import { calculateSHA256 } from '../utils';
-
-// Helper function to convert fs.promises to fs
-const fsPromises = {
-  mkdir: fs.mkdir,
-  readdir: fs.readdir,
-  readFile: fs.readFile,
-  rmdir: fs.rmdir,
-  access: fs.access
-} as const;
+import { createHash } from 'crypto';
+import { DataSource, Repository } from 'typeorm';
+import { Library } from '../entities/library.entity';
+import { Bank } from '../entities/bank.entity';
+import { Patch } from '../entities/patch.entity';
+import { PatchSequence } from '../entities/patch-sequence.entity';
 
 interface ImportResult {
   success: boolean;
-  message: string;
-  imported: {
-    libraries: number;
-    banks: number;
-    patches: number;
-    sequences: number;
-  };
-  libraryId: number;
+  message?: string;
+  libraryId?: number;
 }
 
-async function createBank(
-  bankDir: string,
-  bankFilePath: string,
-  libraryId: number,
-  bankManager: BankManager
-): Promise<number> {
-  const bankName = path.basename(bankFilePath, '.bank');
-  const bankSystemName = bankDir;
-  const bankFingerprint = await calculateSHA256(bankFilePath);
-  const bankContent = await fs.readFile(bankFilePath);
-  console.log(`Creating bank: ${bankName} (${bankSystemName}) with fingerprint ${bankFingerprint}`);
-  return await bankManager.create(libraryId, bankName, bankSystemName, bankFingerprint, bankContent);
-}
-
-asynk function processBank(
-  bankDir: string,
-
-): Promise<number> {
-
-}
-
-export async function importLibrary(libraryPath: string, libraryManager: LibraryManager, bankManager: BankManager, patchManager: PatchManager, patchSequenceManager: PatchSequenceManager): Promise<ImportResult> {
+export async function importLibrary(
+  rootDir: string,
+  dataSource: DataSource
+): Promise<ImportResult> {
   try {
-    // Step 1: Extract zip file to temporary directory
-    // const tempDirPath = path.join(os.tmpdir(), 'muse-library-');
-    // await fsPromises.mkdir(tempDirPath, { recursive: true });
-    // await extractZip(zipPath, tempDirPath);
+    // Initialize repositories
+    const libraryRepo = dataSource.getRepository(Library);
+    const bankRepo = dataSource.getRepository(Bank);
+    const patchRepo = dataSource.getRepository(Patch);
+    const sequenceRepo = dataSource.getRepository(PatchSequence);
 
-    console.log('Importing library from: ', libraryPath);
+    // Validate library structure first
+    const libraryDir = path.join(rootDir, 'library');
+    await validateDirectory(libraryDir);
 
-    // Step 2: Validate library structure
-    const libraryPathSub = path.join(libraryPath, 'library');
-    try {
-      await fs.stat(libraryPathSub);
-    } catch {
-      throw new Error('Invalid library format: Missing library directory');
-    }
-    console.log('Library directory found: ', libraryPathSub);
+    // Calculate library fingerprint
+    const fingerprint = await calculateDirectoryFingerprint(libraryDir);
 
-    // Step 3: Calculate library fingerprint
-    const libraryFingerprint = await calculateSHA256(libraryPathSub);
-    const libraryName = path.basename(libraryPath, path.extname(libraryPath));
-    console.log(`${libraryName} fingerprint: ${libraryFingerprint}`);
-
-    // Step 4: Check if library exists
-    const existingLibrary = await libraryManager.getByFingerprint(libraryFingerprint);
+    // Check if library already exists
+    const existingLibrary = await libraryRepo.findOneBy({ fingerprint: fingerprint });
     if (existingLibrary) {
-      console.log(`${libraryName} already exists`);
-      return {
-        success: false,
-        message: 'Library already exists',
-        imported: {
-          libraries: 0,
-          banks: 0,
-          patches: 0,
-          sequences: 0,
-        },
-        libraryId: 0,
-      };
+      return { success: false, message: 'Library already exists' };
     }
 
-    // Step 5: Create library
-    const libraryId = await libraryManager.create(libraryName, libraryFingerprint);
+    // Validate all bank directories first
+    for (let bankNum = 1; bankNum <= 16; bankNum++) {
+      const bankDirName = `bank${bankNum.toString().padStart(2, '0')}`;
+      const bankDir = path.join(libraryDir, bankDirName);
+      await validateDirectory(bankDir);
+    }
 
-    // Step 6: Process banks
-    const bankDirs = await fs.readdir(libraryPathSub);
-    const imported = {
-      libraries: 1,
-      banks: 0,
-      patches: 0,
-      sequences: 0,
-    };
+    // Validate sequence banks directory
+    const sequencesDir = path.join(libraryDir, 'sequences');
+    await validateDirectory(sequencesDir);
 
-    for (const bankDir of bankDirs) {
-      if (!bankDir.startsWith('bank')) continue;
+    // Validate all sequence bank directories
+    for (let bankNum = 1; bankNum <= 16; bankNum++) {
+      const seqBankDirName = `bank${bankNum.toString().padStart(2, '0')}`;
+      const seqBankDir = path.join(sequencesDir, seqBankDirName);
+      await validateDirectory(seqBankDir);
+    }
 
-      const bankPath = path.join(libraryPathSub, bankDir);
-      console.log(`Processing bank: ${bankPath}`);
-      const files = await fs.readdir(bankPath);
-      const bankFile = files.find(file => file.endsWith('.bank'));
-      if (!bankFile) {
-        throw new Error(`Invalid bank directory: ${bankDir} is missing .bank file`);
-      }
-      const bankFilePath = path.join(bankPath, bankFile);
+    // Now validate patches and sequences
+    // Create library
+    const libraryName = path.basename(rootDir);
+    const library = await libraryRepo.create({
+      name: libraryName,
+      fingerprint
+    });
 
-      // Create bank
-      const bankId = await createBank(bankDir, bankFilePath, libraryId, bankManager);
-      imported.banks++;
+    await libraryRepo.save(library);
+
+    // Process banks
+    for (let bankNum = 1; bankNum <= 16; bankNum++) {
+      const bankDirName = `bank${padNumber(bankNum)}`;
+      const bankDir = path.join(libraryDir, bankDirName);
+
+      const patchBank = await processBank(bankDir, bankNum, bankRepo, 'patch', library);
 
       // Process patches
-      const patchDirs = await fs.readdir(bankPath);
-      for (const patchDir of patchDirs) {
-        if (!patchDir.startsWith('patch')) continue;
+      for (let patchNum = 1; patchNum <= 16; patchNum++) {
+        const patchDirName = `patch${padNumber(patchNum)}`;
+        const patchDir = path.join(bankDir, patchDirName);
+        await validateDirectory(patchDir);
 
-        const patchPath = path.join(bankPath, patchDir);
-        const files = await fs.readdir(patchPath);
-        const mmpFile = files.find(file => file.endsWith('.mmp'));
-        if (!mmpFile) {
-          continue;
+        // Find .mmp file
+        const patchFiles = await fs.readdir(patchDir);
+        const patchFile = patchFiles.find(f => f.endsWith('.mmp'));
+        let patch = null;
+
+        if (patchFile) {
+          // Read patch file content
+          const patchFilePath = path.join(patchDir, patchFile);
+          const patchContent = await fs.readFile(patchFilePath, 'utf-8');
+          const patchName = path.basename(patchFile, '.mmp');
+          const patchFingerprint = createHash('sha256').update(patchContent).digest('hex');
+          const tags = getImplicitTags(patchName, patchBank.name);
+
+          // Create patch
+          patch = await patchRepo.create({
+            patch_number: patchNum,
+            bank_id: patchBank.id,
+            name: patchName,
+            content: patchContent,
+            fingerprint: patchFingerprint,
+            default_patch: false,
+            favorited: false,
+            tagsArray: tags
+          });
+        } else {
+          // Create default patch
+          patch = await patchRepo.create({
+            patch_number: patchNum,
+            bank_id: patchBank.id,
+            name: 'Default Patch',
+            fingerprint: createHash('sha256').update(`${patchBank.id}-${patchNum}`).digest('hex'),
+            default_patch: true,
+            favorited: false,
+            tags: ''
+          });
         }
-        const mmpFilePath = path.join(patchPath, mmpFile);
-
-        // Create patch
-        const patchName = path.basename(mmpFile, '.mmp');
-        const patchContent = await fs.readFile(mmpFilePath, 'utf8');
-        const patchFingerprint = await calculateSHA256(mmpFilePath);
-        const tags = getTagsFromPatchName(patchName, path.basename(bankFile, '.bank'));
-        console.log(`Creating patch: ${patchName} with fingerprint ${patchFingerprint}`);
-        const patchId = await patchManager.create(patchName, patchFingerprint, patchContent, 0, tags);
-        await bankManager.associateWithPatch(bankId, patchId);
-        imported.patches++;
+        await patchRepo.save(patch);
       }
     }
 
-    // Step 7: Process sequences
-    const sequencesPath = path.join(libraryPathSub, 'sequences');
-    try {
-      await fsPromises.access(sequencesPath);
-    } catch {
-      throw new Error(`Invalid library format: Missing sequences directory ${sequencesPath}`);
-    }
-    
-    console.log('Importing sequences from: ', sequencesPath);
+    // Process sequences
+    if (await fs.stat(sequencesDir).then(s => s.isDirectory()).catch(() => false)) {
+      for (let bankNum = 1; bankNum <= 16; bankNum++) {
+        const seqBankDirName = `bank${padNumber(bankNum)}`;
+        const seqBankDir = path.join(sequencesDir, seqBankDirName);
 
-    const seqBankDirs = await fs.readdir(sequencesPath);
-    for (const seqBankDir of seqBankDirs) {
-      if (!seqBankDir.startsWith('bank')) continue;
+        const sequenceBank = await processBank(seqBankDir, bankNum, bankRepo, 'sequence', library);
+        
 
-      console.log(`Processing sequence bank: ${seqBankDir}`);
+        // Process sequences
+        for (let seqNum = 1; seqNum <= 16; seqNum++) {
+          const seqDirName = `seq${padNumber(seqNum)}`;
+          const seqDir = path.join(seqBankDir, seqDirName);
+          await validateDirectory(seqDir);
 
-      const seqBankPath = path.join(sequencesPath, seqBankDir);
-      //const bankName = seqBankDir;
-      const bankSystemName = seqBankDir;
-      //const bankFingerprint = await calculateSHA256(seqBankPath);
-      const bank = await bankManager.getBySystemName(libraryId, bankSystemName);
-      if (!bank) {
-        console.error(`Sequence bank ${bankSystemName} not found`);
-        // Delete the library and all its associated data
-        await libraryManager.delete(libraryId);
-        throw new Error(`Failed to find bank ${bankSystemName} for sequences`);
-      }
-      
-      const seqDirs = await fs.readdir(seqBankPath);
-      for (const seqDir of seqDirs) {
-        if (!seqDir.startsWith('seq')) continue;
-        console.log(`Processing sequence: ${seqDir}`);
+          // Find .mmseq file
+          const seqFiles = await fs.readdir(seqDir);
+          const seqFile = seqFiles.find(f => f.endsWith('.mmseq'));
 
-        const seqPath = path.join(seqBankPath, seqDir);
-        const files = await fs.readdir(seqPath);
-        const mmseqFile = files.find(file => file.endsWith('.mmseq'));
-        if (!mmseqFile) {
-          continue;
-        }
-        const mmseqFilePath = path.join(seqPath, mmseqFile);
+          if (seqFile) {
+            // Read sequence file content
+            const seqFilePath = path.join(seqDir, seqFile);
+            const seqContent = await fs.readFile(seqFilePath, 'utf-8');
+            const seqName = path.basename(seqFile, '.mmseq');
+            const seqFingerprint = createHash('sha256').update(seqContent).digest('hex');
 
-        try {
-          const seqContent = await fs.readFile(mmseqFilePath, 'utf8');
-          const seqFingerprint = await calculateSHA256(mmseqFilePath);
-          const seqName = path.basename(mmseqFile, '.mmseq');
-          
-          // Check if sequence already exists
-          const existingSequence = await patchSequenceManager.getByFingerprint(seqFingerprint);
-          let seqId: number;
-          
-          if (existingSequence) {
-            console.log(`Sequence ${seqName} already exists with fingerprint ${seqFingerprint}, reusing existing sequence`);
-            seqId = existingSequence.id;
+            // Create sequence
+            const sequence = await sequenceRepo.create({
+              sequence_number: seqNum,
+              bank_id: sequenceBank.id,
+              name: seqName,
+              content: seqContent,
+              fingerprint: seqFingerprint
+            });
+            await sequenceRepo.save(sequence);
           } else {
-            console.log(`Creating new sequence: ${seqName} with fingerprint ${seqFingerprint}`);
-            seqId = await patchSequenceManager.create(seqName, seqFingerprint, seqContent);
+            throw new Error(`Missing required .mmseq file in sequence directory: ${seqDirName} in sequence bank ${seqBankDirName}`);
           }
-          
-          await bankManager.associateWithPatchSequence(bankId, seqId);
-          imported.sequences++;
-        } catch (error) {
-          console.error('Failed to import sequence: ', seqDir, error);
-          // Delete the library and all its associated data
-          await libraryManager.delete(libraryId);
-          throw new Error(`Failed to import sequence ${seqDir}: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
       }
     }
 
-    // Clean up
-    // await fs.rmdir(tempDirPath, { recursive: true });
-
-    console.log('We\'re Done!', imported);
-
-    return {
-      success: true,
-      message: 'Library imported successfully',
-      imported,
-      libraryId,
-    };
+    return { success: true, libraryId: library.id };
   } catch (error) {
-    console.error('Library import failed:', error);
-    return {
-      success: false,
-      message: error instanceof Error ? error.message : 'Unknown error occurred',
-      imported: {
-        libraries: 0,
-        banks: 0,
-        patches: 0,
-        sequences: 0,
-      },
-      libraryId: 0,
-    };
+    console.error('Error importing library:', error);
+    return { success: false, message: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
 
-// Register IPC handler
-export function registerImportLibraryIPC(zipPath: string, libraryManager: LibraryManager, bankManager: BankManager, patchManager: PatchManager, patchSequenceManager: PatchSequenceManager) {
-  ipcMain.handle('importLibrary', async () => {
-    return importLibrary(zipPath, libraryManager, bankManager, patchManager, patchSequenceManager);
-  });
+// Helper function to pad numbers with leading zeros
+function padNumber(num: number): string {
+  return num.toString().padStart(2, '0');
 }
+
+// Helper function to calculate directory fingerprint
+async function calculateDirectoryFingerprint(dir: string): Promise<string> {
+  const hash = createHash('sha256');
+  const files = await getAllFiles(dir);
+  
+  for (const file of files.sort()) {
+    const content = await fs.readFile(file);
+    hash.update(content);
+  }
+  
+  return hash.digest('hex');
+}
+
+// Helper function to get all files in a directory recursively
+async function getAllFiles(dir: string): Promise<string[]> {
+  const files: string[] = [];
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...await getAllFiles(fullPath));
+    } else {
+      files.push(fullPath);
+    }
+  }
+  
+  return files;
+} 
 
 // Helper function to determine tags based on patch name
-const getTagsFromPatchName = (patchName: string, bankName: string): string[] => {
-  const tags: string[] = [];
+const getImplicitTags = (patchName: string, bankName: string): string[] => {
+    const tags: string[] = [];
+  
+    // Example conditions for adding tags
+    if (patchName.includes('bass') || bankName.includes('bass')) {
+      tags.push('bass');
+    }
+    if (patchName.includes('lead') || bankName.includes('lead')) {
+      tags.push('lead');
+    }
+    if (patchName.includes('pad') || bankName.includes('pad')) {
+      tags.push('pad');
+    }
+    if (patchName.includes('string') || bankName.includes('string')) {
+      tags.push('strings');
+    }
+    if (patchName.includes('pluck') || bankName.includes('pluck')) {
+      tags.push('pluck');
+    }
+    // Add more conditions as needed
+  
+    return tags;
+  };
 
-  // Example conditions for adding tags
-  if (patchName.includes('bass') || bankName.includes('bass')) {
-    tags.push('bass');
+  const processBank = async (bankDir: string, bankNum: number, bankRepo: Repository<Bank>, bankType: string,  library: Library): Promise<Bank> => {
+      await validateDirectory(bankDir);
+
+      // Find .bank file
+      const bankFiles = await fs.readdir(bankDir);
+      const bankFile = bankFiles.find(f => f.endsWith('.bank'));
+      if (!bankFile) {
+        throw new Error(`Missing .bank file in directory: ${bankDir}`);
+      }
+
+      // Read bank file content
+      const bankFilePath = path.join(bankDir, bankFile);
+      const bankContent = await fs.readFile(bankFilePath);
+      const bankName = path.basename(bankFile, '.bank');
+      const bankFingerprint = await calculateDirectoryFingerprint(bankDir);
+
+      // Create bank
+      const bank = await bankRepo.create({
+        bank_number: bankNum,
+        library_id: library.id,
+        name: bankName,
+        type: bankType as 'patch' | 'sequence',
+        content: bankContent,
+        fingerprint: bankFingerprint
+      });
+
+      await bankRepo.save(bank);
+      return bank;
   }
-  if (patchName.includes('lead') || bankName.includes('lead')) {
-    tags.push('lead');
+
+// Helper function to validate directory exists
+async function validateDirectory(dir: string): Promise<void> {
+  if (!await fs.stat(dir).then(s => s.isDirectory()).catch(() => false)) {
+    throw new Error(`Missing required directory: ${dir}`);
   }
-  if (patchName.includes('pad') || bankName.includes('pad')) {
-    tags.push('pad');
-  }
-  if (patchName.includes('string') || bankName.includes('string')) {
-    tags.push('strings');
-  }
-  if (patchName.includes('pluck') || bankName.includes('pluck')) {
-    tags.push('pluck');
-  }
-  // Add more conditions as needed
-
-  return tags;
-};
-
-
-// Helper function for zip extraction
-// async function extractZip(zipPath: string, outputPath: string): Promise<void> {
-//   try {
-//     // Ensure output directory exists
-//     await fs.mkdir(outputPath, { recursive: true });
-
-//     // Create read stream for zip file
-//     const source = createReadStream(zipPath);
-    
-//     // Extract zip contents
-//     const extractStream = unzipper.Extract({ path: outputPath });
-    
-//     // Handle stream events
-//     await new Promise<void>((resolve, reject) => {
-//       source.pipe(extractStream)
-//         .on('finish', () => {
-//           source.close();
-//           resolve();
-//         })
-//         .on('error', (err: Error) => {
-//           source.close();
-//           reject(err);
-//         });
-//     });
-
-//     console.log('Extracted zip to', outputPath);
-//   } catch (error) {
-//     console.error('Error extracting zip:', error);
-//     throw error;
-//   }
-// }
+}

@@ -1,107 +1,139 @@
 import * as path from 'path';
-import fs from 'fs/promises';
-import { LibraryManager } from '../database/libraries';
-import { BankManager } from '../database/banks';
-import { PatchManager } from '../database/patches';
-import { PatchSequenceManager } from '../database/patch-sequences';
+import * as fs from 'fs/promises';
+import { DataSource } from 'typeorm';
+import { LibraryRepository } from '../repositories/library.repository';
+import { BankRepository } from '../repositories/bank.repository';
+import { PatchRepository } from '../repositories/patch.repository';
+import { PatchSequenceRepository } from '../repositories/patch-sequence.repository';
+
+interface ExportResult {
+  success: boolean;
+  message?: string;
+  exportPath?: string;
+}
 
 export async function exportLibrary(
   libraryId: number,
-  exportDir: string,
-  libraryManager: LibraryManager,
-  bankManager: BankManager,
-  patchManager: PatchManager,
-  patchSequenceManager: PatchSequenceManager
-): Promise<void> {
+  targetDir: string,
+  dataSource: DataSource
+): Promise<ExportResult> {
   try {
-    // Get library details
-    const library = await libraryManager.getById(libraryId);
-    if (!library) {
-      throw new Error(`Library with ID ${libraryId} not found`);
-    }
+    // Initialize repositories
+    const libraryRepo = new LibraryRepository(dataSource);
+    const bankRepo = new BankRepository(dataSource);
+    const patchRepo = new PatchRepository(dataSource);
+    const sequenceRepo = new PatchSequenceRepository(dataSource);
 
-    // Create root directory
-    const rootDir = path.join(exportDir, library.name);
-    await fs.mkdir(rootDir, { recursive: true });
+    // Get library
+    const library = await libraryRepo.findOne(libraryId);
+    if (!library) {
+      return {
+        success: false,
+        message: 'Library not found'
+      };
+    }
 
     // Create library directory
-    const libraryDir = path.join(rootDir, 'library');
+    const libraryDir = path.join(targetDir, library.name);
     await fs.mkdir(libraryDir, { recursive: true });
 
-    // Create sequences directory
-    const sequencesDir = path.join(libraryDir, 'sequences');
-    await fs.mkdir(sequencesDir, { recursive: true });
+    // Create library/library directory
+    const innerLibraryDir = path.join(libraryDir, 'library');
+    await fs.mkdir(innerLibraryDir, { recursive: true });
 
-    // Get all banks for this library
-    const banks = await bankManager.getBanksByLibrary(libraryId);
-    const bankMap = new Map(banks.map(bank => [bank.system_name, bank]));
+    // Get all banks
+    const banks = await bankRepo.findByLibraryId(libraryId);
+    if (banks.length !== 32) { // 16 patch banks + 16 sequence banks
+      return {
+        success: false,
+        message: 'Invalid number of banks found'
+      };
+    }
 
-    // Create all 16 bank directories
-    for (let i = 1; i <= 16; i++) {
-      const bankDirName = `bank${padNumber(i)}`;
-      const bankDir = path.join(libraryDir, bankDirName);
+    // Process patch banks
+    const patchBanks = banks.filter(bank => bank.type === 'patch');
+    for (const bank of patchBanks) {
+      const bankDir = path.join(innerLibraryDir, bank.system_name);
       await fs.mkdir(bankDir, { recursive: true });
 
-      const bank = bankMap.get(bankDirName);
-      if (bank) {
-        // Create bank file
-        const bankFileName = `${bank.name}.bank`;
-        await fs.writeFile(
-          path.join(bankDir, bankFileName),
-          bank.file_content || Buffer.from('')
-        );
+      // Write bank file
+      if (!bank.content) {
+        return {
+          success: false,
+          message: `Missing bank content for ${bank.system_name}`
+        };
+      }
+      const bankFilePath = path.join(bankDir, `${bank.name}.bank`);
+      await fs.writeFile(bankFilePath, bank.content);
 
-        // Get and export patches for this bank
-        const patches = await patchManager.getPatchesByBank(bank.id);
-        for (let j = 1; j <= 16; j++) {
-          const patchDirName = `patch${padNumber(j)}`;
-          const patchDir = path.join(bankDir, patchDirName);
-          await fs.mkdir(patchDir, { recursive: true });
+      // Get patches for this bank
+      const patches = await patchRepo.findByBankId(bank.id);
+      if (patches.length !== 16) {
+        return {
+          success: false,
+          message: `Invalid number of patches found in bank ${bank.system_name}`
+        };
+      }
 
-          const patch = patches[j - 1];
-          if (patch) {
-            // Create patch file
-            const patchFileName = `${patch.name}.mmp`;
-            await fs.writeFile(
-              path.join(patchDir, patchFileName),
-              patch.content
-            );
-          }
+      // Process patches
+      for (const patch of patches) {
+        const patchDir = path.join(bankDir, `patch${padNumber(patch.patch_number)}`);
+        await fs.mkdir(patchDir, { recursive: true });
+
+        // Write patch file if not default
+        if (!patch.default_patch && patch.content) {
+          const patchFilePath = path.join(patchDir, `${patch.name}.mmp`);
+          await fs.writeFile(patchFilePath, patch.content);
         }
       }
     }
 
-    // Export sequences
-    for (let i = 1; i <= 16; i++) {
-      const seqBankDirName = `bank${padNumber(i)}`;
-      const seqBankDir = path.join(sequencesDir, seqBankDirName);
+    // Process sequence banks
+    const sequenceBanks = banks.filter(bank => bank.type === 'sequence');
+    const sequencesDir = path.join(innerLibraryDir, 'sequences');
+    await fs.mkdir(sequencesDir, { recursive: true });
+
+    for (const bank of sequenceBanks) {
+      const seqBankDir = path.join(sequencesDir, bank.system_name);
       await fs.mkdir(seqBankDir, { recursive: true });
 
-      const bank = bankMap.get(seqBankDirName);
-      if (bank) {
-        const sequences = await patchSequenceManager.getSequencesByBank(bank.id);
-        for (let j = 1; j <= 16; j++) {
-          const seqDirName = `seq${padNumber(j)}`;
-          const seqDir = path.join(seqBankDir, seqDirName);
-          await fs.mkdir(seqDir, { recursive: true });
+      // Get sequences for this bank
+      const sequences = await sequenceRepo.findByBankId(bank.id);
+      if (sequences.length !== 16) {
+        return {
+          success: false,
+          message: `Invalid number of sequences found in bank ${bank.system_name}`
+        };
+      }
 
-          const sequence = sequences[j - 1];
-          if (sequence) {
-            // Create sequence file
-            const sequenceFileName = `${sequence.name}.mmseq`;
-            await fs.writeFile(
-              path.join(seqDir, sequenceFileName),
-              sequence.content
-            );
-          }
+      // Process sequences
+      for (const sequence of sequences) {
+        const seqDir = path.join(seqBankDir, `seq${padNumber(sequence.sequence_number)}`);
+        await fs.mkdir(seqDir, { recursive: true });
+
+        // Write sequence file
+        if (sequence.content) {
+          const seqFilePath = path.join(seqDir, `${sequence.name}.mmseq`);
+          await fs.writeFile(seqFilePath, sequence.content);
+        } else {
+          return {
+            success: false,
+            message: `Missing sequence content in ${seqDir}`
+          };
         }
       }
     }
 
-    console.log(`Library exported successfully to ${rootDir}`);
+    return {
+      success: true,
+      exportPath: libraryDir
+    };
   } catch (error) {
     console.error('Error exporting library:', error);
-    throw error;
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : 'Unknown error'
+    };
   }
 }
 

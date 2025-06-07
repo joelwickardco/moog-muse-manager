@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Patch, Library } from '../main/database/types';
+import { Patch } from '../main/entities/patch.entity';
+import { Library } from '../main/entities/library.entity';
 import { Accordion, AccordionItemWrapper } from './components/Accordion';
 import { AppMenu } from './components/AppMenu';
 

@@ -18,7 +18,7 @@ let patchRepo: Repository<Patch>;
 let patchSequenceRepo: Repository<PatchSequence>;
 
 // Function to initialize the database
-const initializeDatabase = async () => {
+const initializeDatabase = async (): Promise<void> => {
   try {
     // Initialize TypeORM DataSource
     await AppDataSource.initialize();
@@ -231,7 +231,7 @@ app.on('activate', () => {
 });
 
 // Register IPC handlers
-ipcMain.handle('export-library', async (_, libraryId: number) => {
+ipcMain.handle('export-library', async (_: unknown, libraryId: number): Promise<void> => {
   const { filePaths } = await dialog.showOpenDialog({
     properties: ['openDirectory'],
   });
@@ -250,7 +250,7 @@ ipcMain.handle('export-library', async (_, libraryId: number) => {
   );
 });
 
-ipcMain.handle('import-library', async () => {
+ipcMain.handle('import-library', async (): Promise<void> => {
   const { filePaths } = await dialog.showOpenDialog({
     properties: ['openDirectory'],
   });
@@ -265,7 +265,7 @@ ipcMain.handle('import-library', async () => {
   await importLibrary(rootDir, AppDataSource);
 });
 
-ipcMain.handle('update-patch', async (_, patchId: string, updates: Partial<Patch>) => {
+ipcMain.handle('update-patch', async (_: unknown, patchId: string, updates: Partial<Patch>): Promise<boolean> => {
   const id = parseInt(patchId);
   if (updates.favorited !== undefined) {
     await patchRepo.update(id, { favorited: updates.favorited });
@@ -276,16 +276,16 @@ ipcMain.handle('update-patch', async (_, patchId: string, updates: Partial<Patch
   return true;
 });
 
-ipcMain.handle('load-libraries', async () => {
+ipcMain.handle('load-libraries', async (): Promise<Library[]> => {
   return await libraryRepo.find();
 });
 
-ipcMain.handle('load-banks-by-library', async (_, libraryId: number) => {
+ipcMain.handle('load-banks-by-library', async (_: unknown, libraryId: number): Promise<Bank[]> => {
   return await bankRepo.find({ where: { type: 'patch', library: { id: libraryId } } });
 });
 
 // Add new IPC handler for getting patches by bank
-ipcMain.handle('get-patches-for-bank', async (_, libraryId: number, bankId: number) => {
+ipcMain.handle('get-patches-for-bank', async (_: unknown, libraryId: number, bankId: number): Promise<Patch[]> => {
   // Verify the bank belongs to the specified library
   const bank = await bankRepo.findOne({
     where: { 
@@ -306,7 +306,7 @@ ipcMain.handle('get-patches-for-bank', async (_, libraryId: number, bankId: numb
 });
 
 // Add new IPC handler for deleting a library
-ipcMain.handle('delete-library', async (_, libraryId: number) => {
+ipcMain.handle('delete-library', async (_: unknown, libraryId: number): Promise<boolean> => {
   try {
     // First delete all related patches and sequences
     const banks = await bankRepo.find({ where: { library: { id: libraryId } } });

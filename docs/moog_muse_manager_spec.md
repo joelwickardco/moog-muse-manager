@@ -16,12 +16,12 @@ This document defines the functional and architectural specifications for a desk
 ### 1. Patch Management
 
 #### Import
-- Import patches according to the structure defined in [library_spec.md](cci:7://file:///Users/joelwickard/develop/moog-muse-manager/library-spec.md:0:0-0:0)
+- Import patches according to the structure defined in [llm-library-spec.md](./llm-library-spec.md)
 - Support for .mmp patch files and .mmseq patch sequence files
 - Import Process:
-  1. User selects a .zip file containing the library structure defined in [library_spec.md](cci:7://file:///Users/joelwickard/develop/moog-muse-manager/library-spec.md:0:0-0:0)
+  1. User selects a .zip file containing the library structure defined in [llm-library-spec.md](./llm-library-spec.md)
   2. System unzips the file into a temporary directory
-  3. System validates directory structure against [library_spec.md](cci:7://file:///Users/joelwickard/develop/moog-muse-manager/library-spec.md:0:0-0:0)
+  3. System validates directory structure against [llm-library-spec.md](./llm-library-spec.md)
   4. System begins parsing the directory structure, creating SQLite entries for each library, bank, patch, and sequence with the following steps:
     1. System reads the root directory name as the library name
     2. System calculates a SHA-256 hash of the library root directory and all file contents
@@ -57,7 +57,7 @@ This document defines the functional and architectural specifications for a desk
   - Add/remove free-form tags.
 - **Export**
   - During export:
-    - Create directory structure according to library_spec.md
+    - Create directory structure according to [llm-library-spec.md](./llm-library-spec.md)
     - Write .mmp and .mmseq files using stored content from database
     - Maintain original file structure and naming conventions
 

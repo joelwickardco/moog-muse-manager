@@ -1,291 +1,273 @@
 import React, { useState, useEffect } from 'react';
-import { Patch } from '../main/database';
+import { Patch } from '../main/entities/patch.entity';
+import { Library } from '../main/entities/library.entity';
+import { Bank } from '../main/entities/bank.entity';
+import { PatchGrid } from './components/PatchGrid';
+import { CopyToDrawer } from './components/CopyToDrawer';
 
 // Define the type for the window object with our electron API
 declare global {
   interface Window {
     electronAPI: {
-      importPatches: () => Promise<{ path: string; bank: string; library: string }[]>;
-      exportPatches: (patches: string[]) => Promise<boolean>;
-      loadPatches: () => Promise<Patch[]>;
       updatePatch: (path: string, updates: Partial<Patch>) => Promise<boolean>;
+      loadLibraries: () => Promise<Library[]>;
+      loadBanksByLibrary: (library: number) => Promise<Bank[]>;
+      getPatchesByBank: (libraryId: number, bankId: number) => Promise<Patch[]>;
+      importLibrary: () => Promise<void>;
+      exportLibrary: (libraryId: number) => Promise<void>;
+      deleteLibrary: (libraryId: number) => Promise<boolean>;
+      onImportLibrary: (callback: (path: string) => void) => void;
+      onExportLibrary: (callback: (path: string) => void) => void;
+      onDeleteLibrary: (callback: () => void) => void;
     }
   }
 }
 
 const App: React.FC = () => {
+  const [libraries, setLibraries] = useState<Library[]>([]);
+  const [selectedLibrary, setSelectedLibrary] = useState<Library | null>(null);
+  const [banks, setBanks] = useState<Bank[]>([]);
+  const [selectedBank, setSelectedBank] = useState<Bank | null>(null);
   const [patches, setPatches] = useState<Patch[]>([]);
-  const [filter, setFilter] = useState({ 
-    loved: false, 
-    category: '', 
-    tag: '',
-    bank: '',
-    library: '',
-    custom: false
-  });
-  const [categories, setCategories] = useState<string[]>(['Bass', 'Lead', 'Pad', 'Pluck', 'Strings']);
+  const [selectedPatches, setSelectedPatches] = useState<Set<string>>(new Set());
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isCopyDrawerOpen, setIsCopyDrawerOpen] = useState(false);
 
-  // Load saved patches when component mounts
+  // Load libraries on mount
   useEffect(() => {
-    const loadSavedPatches = async () => {
+    const loadLibraries = async () => {
       try {
-        const savedPatches = await window.electronAPI.loadPatches();
-        console.log('Loaded patches from database:', savedPatches);
-        console.log('Patches with custom flag:', savedPatches.filter(p => p.custom).length);
-        setPatches(savedPatches);
-        
-        // Update categories based on saved patches
-        const uniqueCategories = new Set([
-          ...categories,
-          ...savedPatches.map(patch => patch.category).filter(Boolean)
-        ]);
-        setCategories(Array.from(uniqueCategories));
+        const loadedLibraries = await window.electronAPI.loadLibraries();
+        setLibraries(loadedLibraries);
+        if (loadedLibraries.length > 0) {
+          setSelectedLibrary(loadedLibraries[0]);
+        }
       } catch (error) {
-        console.error('Error loading saved patches:', error);
+        console.error('Error loading libraries:', error);
+        setError('Failed to load libraries');
       }
     };
-
-    loadSavedPatches();
+    loadLibraries();
   }, []);
 
-  const handleImport = async (): Promise<void> => {
-    try {
-      const importedPatches = await window.electronAPI.importPatches();
-      setPatches(importedPatches as Patch[]);
-    } catch (error) {
-      console.error('Error importing patches:', error);
-    }
-  };
-
-  const handleExport = async (): Promise<void> => {
-    try {
-      const selectedPatches = patches.filter(p => p.loved).map(p => p.path);
-      if (selectedPatches.length === 0) {
-        alert('Please select patches to export by marking them as loved');
-        return;
+  // Load banks when library changes
+  useEffect(() => {
+    const loadBanks = async () => {
+      if (selectedLibrary) {
+        try {
+          setIsLoading(true);
+          const libraryBanks = await window.electronAPI.loadBanksByLibrary(selectedLibrary.id);
+          setBanks(libraryBanks);
+          if (libraryBanks.length > 0) {
+            setSelectedBank(libraryBanks[0]);
+          } else {
+            setSelectedBank(null);
+          }
+        } catch (error) {
+          console.error('Error loading banks:', error);
+          setError('Failed to load banks');
+        } finally {
+          setIsLoading(false);
+        }
+      } else {
+        setBanks([]);
+        setSelectedBank(null);
       }
-      await window.electronAPI.exportPatches(selectedPatches);
-    } catch (error) {
-      console.error('Error exporting patches:', error);
-    }
+    };
+    loadBanks();
+  }, [selectedLibrary]);
+
+  // Load patches when bank changes
+  useEffect(() => {
+    const loadPatches = async () => {
+      if (selectedLibrary && selectedBank) {
+        try {
+          setIsLoading(true);
+          const bankPatches = await window.electronAPI.getPatchesByBank(selectedLibrary.id, selectedBank.id);
+          setPatches(bankPatches);
+          setSelectedPatches(new Set()); // Clear selection when bank changes
+        } catch (error) {
+          console.error('Error loading patches:', error);
+          setError('Failed to load patches');
+        } finally {
+          setIsLoading(false);
+        }
+      } else {
+        setPatches([]);
+        setSelectedPatches(new Set());
+      }
+    };
+    loadPatches();
+  }, [selectedLibrary, selectedBank]);
+
+  const handleLibraryChange = (libraryId: string) => {
+    const library = libraries.find(l => l.id.toString() === libraryId);
+    setSelectedLibrary(library || null);
   };
 
-  const handleFilterChange = async (key: string, value: boolean | string): Promise<void> => {
-    const newFilter = { ...filter, [key]: value };
-    setFilter(newFilter);
+  const handleBankChange = (bankId: string) => {
+    const bank = banks.find(b => b.id.toString() === bankId);
+    setSelectedBank(bank || null);
+  };
 
-    // Check if all filters are cleared
-    const allFiltersCleared = Object.entries(newFilter).every(([_k, v]) => {
-      if (typeof v === 'boolean') return !v;
-      return v === '';
+  const handlePatchSelect = (patchId: string) => {
+    setSelectedPatches(prev => {
+      const newSelection = new Set(prev);
+      if (newSelection.has(patchId)) {
+        newSelection.delete(patchId);
+      } else {
+        newSelection.add(patchId);
+      }
+      return newSelection;
     });
+  };
 
-    if (allFiltersCleared) {
-      console.log('All filters cleared, reloading patches from database...');
+  const handlePatchToggleFavorite = async (patchId: string) => {
+    const patch = patches.find(p => p.id.toString() === patchId);
+    if (patch) {
       try {
-        const savedPatches = await window.electronAPI.loadPatches();
-        console.log('Loaded patches from database:', savedPatches);
-        setPatches(savedPatches);
+        await window.electronAPI.updatePatch(patchId, { favorited: !patch.favorited });
+        setPatches(patches.map(p => 
+          p.id.toString() === patchId 
+            ? { ...p, favorited: !p.favorited }
+            : p
+        ));
       } catch (error) {
-        console.error('Error reloading patches:', error);
+        console.error('Error updating patch:', error);
       }
     }
   };
 
-  const handlePatchEdit = async (index: number, key: string, value: boolean | string | string[]) => {
-    const updatedPatches = [...patches];
-    const patch = updatedPatches[index];
-    const updates = { [key]: value };
-    
-    // Update local state
-    updatedPatches[index] = { ...patch, ...updates };
-    setPatches(updatedPatches);
-
-    // Persist changes to database
-    try {
-      await window.electronAPI.updatePatch(patch.path, updates);
-    } catch (error) {
-      console.error('Error updating patch:', error);
+  const handlePatchTagRemove = async (patchId: string, tagToRemove: string) => {
+    const patch = patches.find(p => p.id.toString() === patchId);
+    if (patch) {
+      const currentTags = JSON.parse(patch.tags || '[]');
+      const updatedTags = currentTags.filter((tag: string) => tag !== tagToRemove);
+      try {
+        await window.electronAPI.updatePatch(patchId, { tags: JSON.stringify(updatedTags) });
+        setPatches(patches.map(p => 
+          p.id.toString() === patchId 
+            ? { ...p, tags: JSON.stringify(updatedTags) }
+            : p
+        ));
+      } catch (error) {
+        console.error('Error updating patch:', error);
+      }
     }
   };
 
-  const filteredPatches = patches.filter(patch => {
-    const isLoved = filter.loved ? patch.loved : true;
-    const matchesCategory = filter.category ? patch.category === filter.category : true;
-    const matchesTag = filter.tag ? patch.tags.includes(filter.tag) : true;
-    const matchesBank = filter.bank ? patch.bank === filter.bank : true;
-    const matchesLibrary = filter.library ? patch.library === filter.library : true;
-    const matchesCustom = filter.custom ? patch.custom : true;
-    
-    if (filter.custom) {
-      console.log(`Patch ${patch.name} custom status:`, {
-        isCustom: patch.custom,
-        matchesCustom,
-        filterCustom: filter.custom
-      });
+  const handlePatchTagAdd = async (patchId: string, newTag: string) => {
+    const patch = patches.find(p => p.id.toString() === patchId);
+    if (patch) {
+      const currentTags = JSON.parse(patch.tags || '[]');
+      if (!currentTags.includes(newTag)) {
+        const updatedTags = [...currentTags, newTag];
+        try {
+          await window.electronAPI.updatePatch(patchId, { tags: JSON.stringify(updatedTags) });
+          setPatches(patches.map(p => 
+            p.id.toString() === patchId 
+              ? { ...p, tags: JSON.stringify(updatedTags) }
+              : p
+          ));
+        } catch (error) {
+          console.error('Error updating patch:', error);
+        }
+      }
     }
-    
-    return isLoved && matchesCategory && matchesTag && matchesBank && matchesLibrary && matchesCustom;
-  });
-
-  // Get unique banks and libraries for filter dropdowns
-  const uniqueBanks = Array.from(new Set(patches.map(patch => patch.bank))).sort();
-  const uniqueLibraries = Array.from(new Set(patches.map(patch => patch.library))).sort();
+  };
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-          <h1 className="text-3xl font-bold text-gray-900">
-            Moog Muse Manager
-          </h1>
-        </div>
-      </header>
-      <main>
-        <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-          <button
-            onClick={handleImport}
-            className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-          >
-            Import Patches
-          </button>
-          <button
-            onClick={handleExport}
-            className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded ml-2"
-          >
-            Export Patches
-          </button>
-          <div className="mt-4">
-            <h2 className="text-xl font-semibold">Filter Patches</h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-              <label className="flex items-center space-x-2">
-                <input
-                  id="loved-filter"
-                  className="h-4 w-4 text-blue-600"
-                  type="checkbox"
-                  checked={filter.loved}
-                  onChange={(e) => handleFilterChange('loved', e.target.checked)}
-                />
-                <span>Loved</span>
-              </label>
-              <label className="flex items-center space-x-2">
-                <input
-                  id="custom-filter"
-                  className="h-4 w-4 text-green-600"
-                  type="checkbox"
-                  checked={filter.custom}
-                  onChange={(e) => handleFilterChange('custom', e.target.checked)}
-                />
-                <span>Custom</span>
-              </label>
-              <div>
-                <label htmlFor="category-filter" className="block text-sm font-medium text-gray-700">
-                  Category
-                </label>
-                <select
-                  id="category-filter"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  value={filter.category}
-                  onChange={(e) => handleFilterChange('category', e.target.value)}
-                >
-                  <option value="">All Categories</option>
-                  {categories.map((cat) => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label htmlFor="bank-filter" className="block text-sm font-medium text-gray-700">
-                  Bank
-                </label>
-                <select
-                  id="bank-filter"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  value={filter.bank}
-                  onChange={(e) => handleFilterChange('bank', e.target.value)}
-                >
-                  <option value="">All Banks</option>
-                  {uniqueBanks.map((bank) => (
-                    <option key={bank} value={bank}>{bank}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label htmlFor="library-filter" className="block text-sm font-medium text-gray-700">
-                  Library
-                </label>
-                <select
-                  id="library-filter"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  value={filter.library}
-                  onChange={(e) => handleFilterChange('library', e.target.value)}
-                >
-                  <option value="">All Libraries</option>
-                  {uniqueLibraries.map((lib) => (
-                    <option key={lib} value={lib}>{lib}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label htmlFor="tags-filter" className="block text-sm font-medium text-gray-700">
-                  Tags
-                </label>
-                <input
-                  id="tags-filter"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  type="text"
-                  placeholder="Filter by tag"
-                  value={filter.tag}
-                  onChange={(e) => handleFilterChange('tag', e.target.value)}
-                />
-              </div>
-            </div>
-          </div>
-          <div className="mt-4">
-            <h2 className="text-xl font-semibold">Imported Patches</h2>
-            <ul className="mt-2 space-y-2">
-              {filteredPatches.map((patch, index) => (
-                <li key={index} className="bg-white p-4 rounded shadow">
-                  <div className="flex items-center space-x-4">
-                    <input
-                      type="checkbox"
-                      checked={patch.loved}
-                      onChange={(e) => handlePatchEdit(index, 'loved', e.target.checked)}
-                      className="h-4 w-4 text-blue-600"
-                    />
-                    <span className="font-medium text-gray-900 min-w-[200px]">{patch.name}</span>
-                    <span className="text-gray-500 min-w-[100px]">Bank: {patch.bank}</span>
-                    <span className="text-gray-500 min-w-[100px]">Library: {patch.library}</span>
-                    {patch.custom && (
-                      <span className="bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded">
-                        Custom
-                      </span>
-                    )}
-                    <select
-                      value={patch.category}
-                      onChange={(e) => handlePatchEdit(index, 'category', e.target.value)}
-                      className="border rounded px-2 py-1"
-                    >
-                      <option value="">Select Category</option>
-                      {categories.map(category => (
-                        <option key={category} value={category}>{category}</option>
-                      ))}
-                    </select>
-                    <input
-                      type="text"
-                      placeholder="Add tags"
-                      value={patch.tags.join(', ')}
-                      onChange={(e) => handlePatchEdit(index, 'tags', e.target.value.split(',').map(tag => tag.trim()))}
-                      className="border rounded px-2 py-1 flex-grow"
-                    />
-                    <span className="text-gray-500 text-xs font-mono">{patch.checksum}</span>
-                  </div>
-                </li>
+    <div className="min-h-screen bg-white text-gray-900 p-4">
+      <div className="max-w-7xl mx-auto">
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-bold">Moog Muse Manager</h1>
+          <div className="flex gap-4">
+            <select
+              value={selectedLibrary?.id.toString() || ''}
+              onChange={(e) => handleLibraryChange(e.target.value)}
+              className="bg-white border border-gray-300 rounded px-3 py-2 text-gray-900"
+            >
+              {libraries.map((library) => (
+                <option key={library.id} value={library.id.toString()}>
+                  {library.name}
+                </option>
               ))}
-            </ul>
+            </select>
+            <select
+              value={selectedBank?.id.toString() || ''}
+              onChange={(e) => handleBankChange(e.target.value)}
+              className="bg-white border border-gray-300 rounded px-3 py-2 text-gray-900"
+            >
+              {banks.map((bank) => (
+                <option key={bank.id} value={bank.id.toString()}>
+                  Bank {bank.id}: {bank.name}
+                </option>
+              ))}
+            </select>
+            {selectedPatches.size > 0 && (
+              <button
+                onClick={() => setIsCopyDrawerOpen(true)}
+                className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-white"
+              >
+                Copy {selectedPatches.size} Patches
+              </button>
+            )}
           </div>
         </div>
-      </main>
+
+        {isLoading ? (
+          <div className="text-center py-8">
+            <span className="text-gray-500">Loading...</span>
+          </div>
+        ) : error ? (
+          <div className="text-center py-8 text-red-600">
+            {error}
+          </div>
+        ) : (
+          <PatchGrid
+            patches={patches.map(patch => ({
+              id: patch.id.toString(),
+              name: patch.name,
+              tags: JSON.parse(patch.tags || '[]'),
+              favorited: patch.favorited,
+              selected: selectedPatches.has(patch.id.toString())
+            }))}
+            onToggleFavorite={handlePatchToggleFavorite}
+            onSelect={handlePatchSelect}
+            onTagRemove={handlePatchTagRemove}
+            onTagAdd={handlePatchTagAdd}
+          />
+        )}
+
+        <CopyToDrawer
+          isOpen={isCopyDrawerOpen}
+          onClose={() => setIsCopyDrawerOpen(false)}
+          libraries={libraries.map(l => l.name)}
+          selectedLibrary={selectedLibrary?.name || ''}
+          selectedBank={selectedBank?.name || ''}
+          slots={Array.from({ length: 16 }, (_, i) => ({
+            index: i,
+            occupied: false, // TODO: Implement slot occupation check
+            selected: false
+          }))}
+          onLibraryChange={(value) => {
+            const library = libraries.find(l => l.name === value);
+            if (library) setSelectedLibrary(library);
+          }}
+          onBankChange={(value) => {
+            const bank = banks.find(b => b.name === value);
+            if (bank) setSelectedBank(bank);
+          }}
+          onSlotToggle={(index) => {
+            // TODO: Implement slot selection logic
+          }}
+          onConfirm={() => {
+            // TODO: Implement copy confirmation logic
+            setIsCopyDrawerOpen(false);
+          }}
+        />
+      </div>
     </div>
   );
 };

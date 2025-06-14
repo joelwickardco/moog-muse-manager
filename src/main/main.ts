@@ -1,9 +1,39 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu, MenuItemConstructorOptions } from 'electron';
 import path from 'path';
 import fs from 'fs';
-import { getDbManager, Patch, calculateChecksum } from './database';
+import { Repository } from 'typeorm';
+import { importLibrary } from './services/importLibrary';
+import { exportLibrary } from './services/exportLibrary';
+import { Library } from './entities/library.entity';
+import { Patch } from './entities/patch.entity';
+import { Bank } from './entities/bank.entity';
+import { PatchSequence } from './entities/patch-sequence.entity';
+import { AppDataSource } from './data-source';
+import { LibraryValidator } from './services/validateLibrary';
 
-const dbManager = getDbManager();
+// Initialize repositories
+let libraryRepo: Repository<Library>;
+let bankRepo: Repository<Bank>;
+let patchRepo: Repository<Patch>;
+let patchSequenceRepo: Repository<PatchSequence>;
+
+// Function to initialize the database
+const initializeDatabase = async () => {
+  try {
+    // Initialize TypeORM DataSource
+    await AppDataSource.initialize();
+    console.log('Database initialized successfully.');
+
+    // Initialize repositories
+    libraryRepo = AppDataSource.getRepository(Library);
+    bankRepo = AppDataSource.getRepository(Bank);
+    patchRepo = AppDataSource.getRepository(Patch);
+    patchSequenceRepo = AppDataSource.getRepository(PatchSequence);
+  } catch (error) {
+    console.error('Error initializing database:', error);
+    app.quit(); // Quit the app if initialization fails
+  }
+};
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (require('electron-squirrel-startup')) {
@@ -22,6 +52,151 @@ const createWindow = (): void => {
     },
   });
 
+  // Create the application menu
+  const template: MenuItemConstructorOptions[] = [
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'Import Library',
+          click: async () => {
+            const result = await dialog.showOpenDialog(mainWindow, {
+              properties: ['openDirectory'],
+              title: 'Select Library Directory'
+            });
+            if (!result.canceled && result.filePaths.length > 0) {
+              mainWindow.webContents.send('import-library', result.filePaths[0]);
+            }
+          }
+        },
+        {
+          label: 'Export Library',
+          click: async () => {
+            const result = await dialog.showOpenDialog(mainWindow, {
+              properties: ['openDirectory'],
+              title: 'Select Export Directory'
+            });
+            if (!result.canceled && result.filePaths.length > 0) {
+              mainWindow.webContents.send('export-library', result.filePaths[0]);
+            }
+          }
+        },
+        {
+          label: 'Validate Library',
+          click: async () => {
+            const result = await dialog.showOpenDialog(mainWindow, {
+              properties: ['openDirectory'],
+              title: 'Select Library Directory to Validate'
+            });
+            if (!result.canceled && result.filePaths.length > 0) {
+              const validator = new LibraryValidator();
+              const validationResult = validator.validateLibrary(result.filePaths[0]);
+              
+              // Format the validation results
+              const message = validationResult.isValid 
+                ? 'Library validation passed successfully!'
+                : 'Library validation failed.';
+              
+              const detail = [
+                `Banks found: ${validationResult.details.bankCount}`,
+                `Patches found: ${validationResult.details.patchCount}`,
+                `Sequences found: ${validationResult.details.sequenceCount}`,
+                '',
+                'Errors:',
+                ...validationResult.errors.map((error: string) => `• ${error}`),
+                '',
+                'Warnings:',
+                ...validationResult.warnings.map((warning: string) => `• ${warning}`),
+                '',
+                'Missing Items:',
+                ...validationResult.details.missingBanks.map((bank: string) => `• ${bank}`),
+                ...validationResult.details.missingPatches.map((patch: string) => `• ${patch}`),
+                ...validationResult.details.missingSequences.map((seq: string) => `• ${seq}`)
+              ].join('\n');
+
+              await dialog.showMessageBox(mainWindow, {
+                type: validationResult.isValid ? 'info' : 'warning',
+                title: 'Library Validation Results',
+                message,
+                detail,
+                buttons: ['OK'],
+                defaultId: 0
+              });
+            }
+          }
+        },
+        {
+          label: 'Delete Selected Library',
+          click: async () => {
+            const result = await dialog.showMessageBox(mainWindow, {
+              type: 'warning',
+              title: 'Delete Library',
+              message: 'Are you sure you want to delete the selected library?',
+              detail: 'This action cannot be undone.',
+              buttons: ['Cancel', 'Delete'],
+              defaultId: 0,
+              cancelId: 0
+            });
+            
+            if (result.response === 1) { // User clicked Delete
+              mainWindow.webContents.send('delete-library');
+            }
+          }
+        },
+        { type: 'separator' },
+        {
+          label: 'Exit',
+          click: () => {
+            app.quit();
+          }
+        }
+      ]
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' }
+      ]
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+    },
+    {
+      label: 'Help',
+      submenu: [
+        {
+          label: 'About',
+          click: async () => {
+            await dialog.showMessageBox(mainWindow, {
+              title: 'About Moog Muse Manager',
+              message: 'Moog Muse Manager',
+              detail: 'Version 1.0.0\nA tool for managing Moog Muse libraries and patches.'
+            });
+          }
+        }
+      ]
+    }
+  ];
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+
   // and load the index.html of the app.
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL('http://localhost:5173');
@@ -31,10 +206,12 @@ const createWindow = (): void => {
   }
 };
 
-// This method will be called when Electron has finished
-// initialization and is ready to create browser windows.
-// Some APIs can only be used after this event occurs.
-app.on('ready', createWindow);
+// This method will be called when Electron has finished initialization
+// and is ready to create browser windows.
+app.on('ready', async () => {
+  await initializeDatabase(); // Initialize the database before creating the window
+  createWindow();
+});
 
 // Quit when all windows are closed, except on macOS. There, it's common
 // for applications and their menu bar to stay active until the user quits
@@ -53,170 +230,109 @@ app.on('activate', () => {
   }
 });
 
-// IPC handler for importing patches
-ipcMain.handle('import-patches', async () => {
+// Register IPC handlers
+ipcMain.handle('export-library', async (_, libraryId: number) => {
   const { filePaths } = await dialog.showOpenDialog({
     properties: ['openDirectory'],
   });
 
-  console.log('Selected directory:', filePaths[0]);
-
   if (filePaths.length === 0) {
-    return [];
-  }
-
-  let rootDir = filePaths[0];
-  const libraryName = path.basename(rootDir);
-  // If Library/ exists, use it as the root
-  const libraryPath = path.join(rootDir, 'Library');
-  if (fs.existsSync(libraryPath) && fs.statSync(libraryPath).isDirectory()) {
-    rootDir = libraryPath;
-    console.log('Using Library/ as root directory:', rootDir);
-  }
-
-  const patches: Patch[] = [];
-  // Get all directories that contain a .bank file
-  const bankDirs = fs.readdirSync(rootDir)
-    .filter(file => {
-      const fullPath = path.join(rootDir, file);
-      if (!fs.statSync(fullPath).isDirectory()) return false;
-      const contents = fs.readdirSync(fullPath);
-      return contents.some(f => f.endsWith('.bank'));
-    })
-    .sort(); // Sort to ensure consistent order
-
-  console.log('Found bank directories:', bankDirs);
-
-  for (const bankDir of bankDirs) {
-    const bankPath = path.join(rootDir, bankDir);
-    // Get the bank name from the .bank file instead of the directory
-    const bankFiles = fs.readdirSync(bankPath).filter(f => f.endsWith('.bank'));
-    if (bankFiles.length === 0) {
-      console.log(`No .bank file found in ${bankDir}, skipping...`);
-      continue;
-    }
-    const bankName = bankFiles[0].replace('.bank', '');
-    const isCustom = bankName.toLowerCase().startsWith('user');
-    console.log('Processing bank:', bankName, 'Is custom:', isCustom);
-
-    // Create or get bank
-    dbManager.saveBank({
-      name: bankName,
-      library: libraryName,
-      custom: isCustom
-    });
-
-    const patchDirs = fs.readdirSync(bankPath)
-      .filter(file => fs.statSync(path.join(bankPath, file)).isDirectory())
-      .filter(dir => dir.startsWith('patch'));
-
-    for (const patchDir of patchDirs) {
-      const patchPath = path.join(bankPath, patchDir);
-      const patchFiles = fs.readdirSync(patchPath)
-        .filter(file => file.endsWith('.mmp'));
-
-      for (const patchFile of patchFiles) {
-        const fullPath = path.join(patchPath, patchFile);
-        const checksum = calculateChecksum(fullPath);
-        
-        // Skip if patch already exists
-        if (dbManager.patchExists(checksum)) {
-          console.log(`Skipping duplicate patch: ${patchFile}`);
-          continue;
-        }
-
-        console.log(`Creating patch for ${patchFile} in bank ${bankName}, custom: ${isCustom}`);
-        const patch = {
-          path: fullPath,
-          name: path.basename(patchFile, '.mmp'),
-          loved: false,
-          category: '',
-          tags: [bankName],
-          bank: bankName,
-          library: libraryName,
-          checksum,
-          custom: isCustom
-        };
-        console.log('Created patch object:', JSON.stringify(patch, null, 2));
-        patches.push(patch);
-      }
-    }
-  }
-
-  console.log('Total new patches found:', patches.length);
-  console.log('Patches with custom flag:', patches.filter(p => p.custom).length);
-  
-  // Save patches to database
-  if (patches.length > 0) {
-    console.log('Saving patches to database...');
-    dbManager.savePatches(patches);
-    console.log('Patches saved to database');
-
-    // Associate patches with their banks after saving
-    for (const patch of patches) {
-      const bank = dbManager.getBank(patch.bank, patch.library);
-      if (bank && bank.id !== undefined) {
-        dbManager.associatePatchWithBank(patch.path, bank.id);
-      }
-    }
-  }
-  
-  return patches;
-});
-
-// Add new IPC handler for loading banks
-ipcMain.handle('load-banks', () => {
-  return dbManager.loadBanks();
-});
-
-// Add new IPC handler for getting patches by bank
-ipcMain.handle('get-patches-for-bank', (_, bankId: number) => {
-  return dbManager.getPatchesForBank(bankId);
-});
-
-// IPC handler for loading saved patches
-ipcMain.handle('load-patches', () => {
-  return dbManager.loadPatches();
-});
-
-// IPC handler for updating patch metadata
-ipcMain.handle('update-patch', (_, path: string, updates: Partial<Patch>) => {
-  dbManager.updatePatchMetadata(path, updates);
-  return true;
-});
-
-// IPC handler for exporting patches
-ipcMain.handle('export-patches', async (_, patches: string[]) => {
-  const { filePath } = await dialog.showSaveDialog({
-    title: 'Export Patches',
-    defaultPath: path.join(app.getPath('documents'), 'exported-patches'),
-    buttonLabel: 'Export',
-  });
-
-  if (!filePath) {
     return;
   }
 
-  const exportDirectory = path.dirname(filePath);
-  if (!fs.existsSync(exportDirectory)) {
-    fs.mkdirSync(exportDirectory, { recursive: true });
-  }
+  const exportDir = filePaths[0];
+  console.log('Selected export directory:', exportDir);
 
-  patches.forEach((patch: string, index: number) => {
-    const patchDir = path.join(exportDirectory, `bank${index.toString().padStart(2, '0')}`);
-    if (!fs.existsSync(patchDir)) {
-      fs.mkdirSync(patchDir, { recursive: true });
-    }
-    const patchFile = path.join(patchDir, `patch${index.toString().padStart(2, '0')}.mmp`);
-    fs.copyFileSync(patch, patchFile);
+  await exportLibrary(
+    libraryId,
+    exportDir,
+    AppDataSource
+  );
+});
+
+ipcMain.handle('import-library', async () => {
+  const { filePaths } = await dialog.showOpenDialog({
+    properties: ['openDirectory'],
   });
 
+  if (filePaths.length === 0) {
+    return;
+  }
+
+  const rootDir = filePaths[0];
+  console.log('Selected directory:', rootDir);
+
+  await importLibrary(rootDir, AppDataSource);
+});
+
+ipcMain.handle('update-patch', async (_, patchId: string, updates: Partial<Patch>) => {
+  const id = parseInt(patchId);
+  if (updates.favorited !== undefined) {
+    await patchRepo.update(id, { favorited: updates.favorited });
+  }
+  if (updates.tags) {
+    await patchRepo.update(id, { tags: updates.tags });
+  }
   return true;
 });
 
+ipcMain.handle('load-libraries', async () => {
+  return await libraryRepo.find();
+});
+
+ipcMain.handle('load-banks-by-library', async (_, libraryId: number) => {
+  return await bankRepo.find({ where: { type: 'patch', library: { id: libraryId } } });
+});
+
+// Add new IPC handler for getting patches by bank
+ipcMain.handle('get-patches-for-bank', async (_, libraryId: number, bankId: number) => {
+  // Verify the bank belongs to the specified library
+  const bank = await bankRepo.findOne({
+    where: { 
+      id: bankId,
+      library: { id: libraryId }
+    }
+  });
+
+  if (!bank) {
+    throw new Error('Bank not found in the specified library');
+  }
+
+  // Get all patches for the specified bank
+  return await patchRepo.find({
+    where: { bank: { id: bankId } },
+    order: { patch_number: 'ASC' }
+  });
+});
+
+// Add new IPC handler for deleting a library
+ipcMain.handle('delete-library', async (_, libraryId: number) => {
+  try {
+    // First delete all related patches and sequences
+    const banks = await bankRepo.find({ where: { library: { id: libraryId } } });
+    for (const bank of banks) {
+      await patchRepo.delete({ bank: { id: bank.id } });
+      await patchSequenceRepo.delete({ bank: { id: bank.id } });
+    }
+    
+    // Then delete all banks
+    await bankRepo.delete({ library: { id: libraryId } });
+    
+    // Finally delete the library
+    await libraryRepo.delete(libraryId);
+    
+    return true;
+  } catch (error) {
+    console.error('Error deleting library:', error);
+    return false;
+  }
+});
+
 // Clean up database connection when app quits
-app.on('before-quit', () => {
-  dbManager.close();
+app.on('before-quit', async () => {
+  if (AppDataSource.isInitialized) {
+    await AppDataSource.destroy();
+  }
 });
 
 // In this file you can include the rest of your app's specific main process

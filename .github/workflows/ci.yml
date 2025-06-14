@@ -78,98 +78,98 @@ jobs:
         name: security-report
         path: reports/
 
-  build:
-    needs: security
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      matrix:
-        os: [macos-latest, ubuntu-latest]
-
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: 'npm'
-
-    - name: Install dependencies
-      run: npm ci
-
-    - name: Build application
-      run: npm run build
-
-    - name: Package application
-      run: npm run make
-
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: electron-app-${{ matrix.os }}
-        path: out/
-        if-no-files-found: error
-
-  release:
-    needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: 'npm'
-
-    - name: Install dependencies
-      run: npm ci
-
-    - name: Configure Git
-      run: |
-        git config --global user.name 'github-actions[bot]'
-        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-
-    - name: Debug Git Info
-      run: |
-        echo "Current branch: $(git branch --show-current)"
-        echo "All branches:"
-        git branch -a
-        echo "Git config:"
-        git config --list
-
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: artifacts
-
-    - name: Release
-      id: release
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        DEBUG: "semantic-release:*"
-      run: npx semantic-release --debug
-
-    - name: Get latest tag
-      id: get_tag
-      run: echo "tag=$(git describe --tags --abbrev=0)" >> $GITHUB_OUTPUT
-
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: ${{ steps.get_tag.outputs.tag }}
-        files: |
-          artifacts/electron-app-macos-latest/**/*.dmg
-          artifacts/electron-app-macos-latest/**/*.zip
-          artifacts/electron-app-ubuntu-latest/**/*.deb
-          artifacts/electron-app-ubuntu-latest/**/*.rpm
-          artifacts/electron-app-ubuntu-latest/**/*.zip
-          !artifacts/**/locale.pak
-        draft: false
-        generate_release_notes: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+#   build:
+#     needs: security
+#     runs-on: ${{ matrix.os }}
+# 
+#     strategy:
+#       matrix:
+#         os: [macos-latest, ubuntu-latest]
+# 
+#     steps:
+#     - uses: actions/checkout@v4
+# 
+#     - name: Setup Node.js
+#       uses: actions/setup-node@v4
+#       with:
+#         node-version: '20'
+#         cache: 'npm'
+# 
+#     - name: Install dependencies
+#       run: npm ci
+# 
+#     - name: Build application
+#       run: npm run build
+# 
+#     - name: Package application
+#       run: npm run make
+# 
+#     - name: Upload build artifacts
+#       uses: actions/upload-artifact@v4
+#       with:
+#         name: electron-app-${{ matrix.os }}
+#         path: out/
+#         if-no-files-found: error
+# 
+#   release:
+#     needs: build
+#     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+#     runs-on: ubuntu-latest
+#     steps:
+#     - uses: actions/checkout@v4
+#       with:
+#         fetch-depth: 0
+# 
+#     - name: Setup Node.js
+#       uses: actions/setup-node@v4
+#       with:
+#         node-version: '20'
+#         cache: 'npm'
+# 
+#     - name: Install dependencies
+#       run: npm ci
+# 
+#     - name: Configure Git
+#       run: |
+#         git config --global user.name 'github-actions[bot]'
+#         git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+# 
+#     - name: Debug Git Info
+#       run: |
+#         echo "Current branch: $(git branch --show-current)"
+#         echo "All branches:"
+#         git branch -a
+#         echo "Git config:"
+#         git config --list
+# 
+#     - name: Download all artifacts
+#       uses: actions/download-artifact@v4
+#       with:
+#         path: artifacts
+# 
+#     - name: Release
+#       id: release
+#       env:
+#         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#         DEBUG: "semantic-release:*"
+#       run: npx semantic-release --debug
+# 
+#     - name: Get latest tag
+#       id: get_tag
+#       run: echo "tag=$(git describe --tags --abbrev=0)" >> $GITHUB_OUTPUT
+# 
+#     - name: Create Release
+#       uses: softprops/action-gh-release@v1
+#       with:
+#         tag_name: ${{ steps.get_tag.outputs.tag }}
+#         files: |
+#           artifacts/electron-app-macos-latest/**/*.dmg
+#           artifacts/electron-app-macos-latest/**/*.zip
+#           artifacts/electron-app-ubuntu-latest/**/*.deb
+#           artifacts/electron-app-ubuntu-latest/**/*.rpm
+#           artifacts/electron-app-ubuntu-latest/**/*.zip
+#           !artifacts/**/locale.pak
+#         draft: false
+#         generate_release_notes: true
+#       env:
+#         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 

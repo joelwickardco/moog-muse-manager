@@ -67,8 +67,10 @@ export async function exportLibrary(
       }
 
       // Verify we have the correct number of patches
-      if (patches.length !== 8) {
-        throw new Error(`Invalid number of patches found in bank ${bank.name}`);
+      if (patches.length !== 16) {
+        throw new Error(
+          `Invalid number of patches found in bank ${bank.name} (expected 16)`
+        );
       }
 
       // Export each patch
@@ -95,8 +97,10 @@ export async function exportLibrary(
         const bankSequences = sequences.filter(s => s.bank_id === bank.id);
 
         // Verify we have the correct number of sequences
-        if (bankSequences.length !== 8) {
-          throw new Error(`Invalid number of sequences found in bank ${bank.name}`);
+        if (bankSequences.length !== 16) {
+          throw new Error(
+            `Invalid number of sequences found in bank ${bank.name} (expected 16)`
+          );
         }
 
         // Export each sequence

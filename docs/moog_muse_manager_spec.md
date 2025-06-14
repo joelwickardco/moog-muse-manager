@@ -27,7 +27,7 @@ This document defines the functional and architectural specifications for a desk
     2. System calculates a SHA-256 hash of the library root directory and all file contents
     3. System checks to see if the library already exists in the database with the same name and hash
     4. If a library with the same name and hash exists, System prompts notifies user that the library will be skipped.
-    5. If the library doesnt exist, System creates a new library entry in the database with the name and hash as the fingerprint.
+    5. If the library doesn't exist, System creates a new library entry in the database with the name and hash as the fingerprint.
     6. System creates a new bank entry for each bank directory in the library.
       1. System reads the .bank file and uses the file name as the bank name.
       2. System calculates a SHA-256 hash of the .bank file contents

@@ -214,7 +214,7 @@ describe('exportLibrary', () => {
     const result = await exportLibrary(1, '/tmp', mockDataSource);
 
     expect(result.success).toBe(false);
-    expect(result.message).toBe('Invalid number of patches found in bank bank01');
+    expect(result.message).toBe('Invalid number of patches found in bank bank01 (expected 16)');
   });
 
   it('should return error if bank content is missing', async () => {

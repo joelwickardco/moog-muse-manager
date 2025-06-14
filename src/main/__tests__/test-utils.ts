@@ -6,7 +6,7 @@ import { PatchSequence } from '../entities/patch-sequence.entity';
 
 export async function createTestDataSource(): Promise<DataSource> {
   const dataSource = new DataSource({
-    type: 'sqlite',
+    type: 'better-sqlite3',
     database: ':memory:',
     synchronize: true,
     logging: false,

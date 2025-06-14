@@ -4,14 +4,14 @@ import { Bank } from './bank.entity';
 @Entity('libraries')
 export class Library {
   @PrimaryGeneratedColumn()
-  id: number;
+    id: number;
 
-  @Column({ unique: true })
-  name: string;
+  @Column({ type: 'varchar', unique: true })
+    name: string;
 
-  @Column({ unique: true })
-  fingerprint: string;
+  @Column({ type: 'varchar', unique: true })
+    fingerprint: string;
 
   @OneToMany(() => Bank, bank => bank.library)
-  banks: Bank[];
+    banks: Bank[];
 } 

@@ -4,24 +4,24 @@ import { Bank } from './bank.entity';
 @Entity('patch_sequences')
 export class PatchSequence {
   @PrimaryGeneratedColumn()
-  id: number;
+    id: number;
 
-  @Column()
-  sequence_number: number;
+  @Column({ type: 'integer' })
+    sequence_number: number;
 
-  @Column()
-  bank_id: number;
+  @Column({ type: 'integer' })
+    bank_id: number;
 
-  @Column()
-  name: string;
+  @Column({ type: 'varchar' })
+    name: string;
 
-  @Column({ unique: true })
-  fingerprint: string;
+  @Column({ type: 'varchar' })
+    fingerprint: string;
 
   @Column({ type: 'text' })
-  content: string;
+    content: string;
 
   @ManyToOne(() => Bank, bank => bank.sequences)
   @JoinColumn({ name: 'bank_id' })
-  bank: Bank;
+    bank: Bank;
 } 

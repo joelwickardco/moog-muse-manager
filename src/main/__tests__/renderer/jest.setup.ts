@@ -1,9 +1,14 @@
 import '@testing-library/jest-dom';
 
+// Mock ResizeObserver for jsdom
+global.ResizeObserver = class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+
 // Mock window.electronAPI
 const mockElectronAPI = {
-  importPatches: jest.fn(),
-  exportPatches: jest.fn(),
   loadPatches: jest.fn(),
   updatePatch: jest.fn()
 };

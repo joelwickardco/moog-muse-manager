@@ -84,10 +84,6 @@ describe('App', () => {
   it('should load and display patches after import', async () => {
     render(<App />);
     
-    // Click the menu button
-    const menuButton = screen.getByLabelText('Menu');
-    fireEvent.click(menuButton);
-    
     // Click the import button
     const importButton = screen.getByText('Import Library');
     fireEvent.click(importButton);
@@ -104,8 +100,6 @@ describe('App', () => {
     render(<App />);
     
     // Import patches first
-    const menuButton = screen.getByLabelText('Menu');
-    fireEvent.click(menuButton);
     const importButton = screen.getByText('Import Library');
     fireEvent.click(importButton);
     

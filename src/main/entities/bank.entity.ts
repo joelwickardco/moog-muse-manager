@@ -6,39 +6,36 @@ import { PatchSequence } from './patch-sequence.entity';
 @Entity('banks')
 export class Bank {
   @PrimaryGeneratedColumn()
-  id: number;
+    id: number;
 
-  @Column()
-  bank_number: number;
+  @Column({ type: 'integer' })
+    bank_number: number;
 
-  @Column()
-  library_id: number;
+  @Column({ type: 'integer' })
+    library_id: number;
 
-  @Column()
-  name: string;
-
-  @Column()
-  system_name: string;
+  @Column({ type: 'varchar' })
+    name: string;
 
   @Column({
     type: 'text',
     enum: ['patch', 'sequence']
   })
-  type: 'patch' | 'sequence';
+    type: 'patch' | 'sequence';
 
   @Column({ type: 'blob', nullable: true })
-  content: Buffer;
+    content: Buffer;
 
-  @Column({ unique: true })
-  fingerprint: string;
+  @Column({ type: 'varchar' })
+    fingerprint: string;
 
   @ManyToOne(() => Library, library => library.banks)
   @JoinColumn({ name: 'library_id' })
-  library: Library;
+    library: Library;
 
   @OneToMany(() => Patch, patch => patch.bank)
-  patches: Patch[];
+    patches: Patch[];
 
   @OneToMany(() => PatchSequence, sequence => sequence.bank)
-  sequences: PatchSequence[];
+    sequences: PatchSequence[];
 } 

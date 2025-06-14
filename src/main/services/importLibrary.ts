@@ -6,6 +6,7 @@ import { Library } from '../entities/library.entity';
 import { Bank } from '../entities/bank.entity';
 import { Patch } from '../entities/patch.entity';
 import { PatchSequence } from '../entities/patch-sequence.entity';
+import { padNumber } from '../utils';
 
 interface ImportResult {
   success: boolean;
@@ -167,11 +168,6 @@ export async function importLibrary(
   }
 }
 
-// Helper function to pad numbers with leading zeros
-function padNumber(num: number): string {
-  return num.toString().padStart(2, '0');
-}
-
 // Helper function to calculate directory fingerprint
 async function calculateDirectoryFingerprint(dir: string): Promise<string> {
   const hash = createHash('sha256');
@@ -204,58 +200,58 @@ async function getAllFiles(dir: string): Promise<string[]> {
 
 // Helper function to determine tags based on patch name
 const getImplicitTags = (patchName: string, bankName: string): string[] => {
-    const tags: string[] = [];
+  const tags: string[] = [];
   
-    // Example conditions for adding tags
-    if (patchName.includes('bass') || bankName.includes('bass')) {
-      tags.push('bass');
-    }
-    if (patchName.includes('lead') || bankName.includes('lead')) {
-      tags.push('lead');
-    }
-    if (patchName.includes('pad') || bankName.includes('pad')) {
-      tags.push('pad');
-    }
-    if (patchName.includes('string') || bankName.includes('string')) {
-      tags.push('strings');
-    }
-    if (patchName.includes('pluck') || bankName.includes('pluck')) {
-      tags.push('pluck');
-    }
-    // Add more conditions as needed
-  
-    return tags;
-  };
-
-  const processBank = async (bankDir: string, bankNum: number, bankRepo: Repository<Bank>, bankType: string,  library: Library): Promise<Bank> => {
-      await validateDirectory(bankDir);
-
-      // Find .bank file
-      const bankFiles = await fs.readdir(bankDir);
-      const bankFile = bankFiles.find(f => f.endsWith('.bank'));
-      if (!bankFile) {
-        throw new Error(`Missing .bank file in directory: ${bankDir}`);
-      }
-
-      // Read bank file content
-      const bankFilePath = path.join(bankDir, bankFile);
-      const bankContent = await fs.readFile(bankFilePath);
-      const bankName = path.basename(bankFile, '.bank');
-      const bankFingerprint = await calculateDirectoryFingerprint(bankDir);
-
-      // Create bank
-      const bank = await bankRepo.create({
-        bank_number: bankNum,
-        library_id: library.id,
-        name: bankName,
-        type: bankType as 'patch' | 'sequence',
-        content: bankContent,
-        fingerprint: bankFingerprint
-      });
-
-      await bankRepo.save(bank);
-      return bank;
+  // Example conditions for adding tags
+  if (patchName.includes('bass') || bankName.includes('bass')) {
+    tags.push('bass');
   }
+  if (patchName.includes('lead') || bankName.includes('lead')) {
+    tags.push('lead');
+  }
+  if (patchName.includes('pad') || bankName.includes('pad')) {
+    tags.push('pad');
+  }
+  if (patchName.includes('string') || bankName.includes('string')) {
+    tags.push('strings');
+  }
+  if (patchName.includes('pluck') || bankName.includes('pluck')) {
+    tags.push('pluck');
+  }
+  // Add more conditions as needed
+  
+  return tags;
+};
+
+const processBank = async (bankDir: string, bankNum: number, bankRepo: Repository<Bank>, bankType: string,  library: Library): Promise<Bank> => {
+  await validateDirectory(bankDir);
+
+  // Find .bank file
+  const bankFiles = await fs.readdir(bankDir);
+  const bankFile = bankFiles.find(f => f.endsWith('.bank'));
+  if (!bankFile) {
+    throw new Error(`Missing .bank file in directory: ${bankDir}`);
+  }
+
+  // Read bank file content
+  const bankFilePath = path.join(bankDir, bankFile);
+  const bankContent = await fs.readFile(bankFilePath);
+  const bankName = path.basename(bankFile, '.bank');
+  const bankFingerprint = await calculateDirectoryFingerprint(bankDir);
+
+  // Create bank
+  const bank = await bankRepo.create({
+    bank_number: bankNum,
+    library_id: library.id,
+    name: bankName,
+    type: bankType as 'patch' | 'sequence',
+    content: bankContent,
+    fingerprint: bankFingerprint
+  });
+
+  await bankRepo.save(bank);
+  return bank;
+};
 
 // Helper function to validate directory exists
 async function validateDirectory(dir: string): Promise<void> {

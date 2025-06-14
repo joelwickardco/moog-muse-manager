@@ -14,6 +14,7 @@ export default defineConfig({
       external: [
         'electron',
         '@vscode/sqlite3',
+        'better-sqlite3',
         'fs',
         'path',
         'crypto',
@@ -28,7 +29,22 @@ export default defineConfig({
         'module',
         'process',
         'url',
-        'vm'
+        'vm',
+        'mysql2',
+        'pg',
+        'oracledb',
+        'mssql',
+        'mongodb',
+        '@google-cloud/spanner',
+        '@sap/hana-client',
+        '@sap/hana-client/extension/Stream',
+        'hdb-pool',
+        'pg-native',
+        'pg-query-stream',
+        'typeorm-aurora-data-api-driver',
+        'redis',
+        'ioredis',
+        'sql.js',
       ],
       output: {
         entryFileNames: 'main.js',
@@ -38,7 +54,11 @@ export default defineConfig({
     minify: false,
     commonjsOptions: {
       include: [/node_modules/],
-      extensions: ['.js', '.cjs', '.ts', '.tsx', '.json']
+      extensions: ['.js', '.cjs', '.ts', '.tsx', '.json'],
+      dynamicRequireTargets: [
+        'node_modules/better-sqlite3/*.node',
+        'node_modules/@vscode/sqlite3/*.node'
+      ]
     }
   },
   resolve: {
@@ -47,10 +67,10 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    exclude: ['@vscode/sqlite3']
+    exclude: ['@vscode/sqlite3', 'better-sqlite3']
   },
   ssr: {
-    noExternal: ['@vscode/sqlite3']
+    noExternal: ['@vscode/sqlite3', 'better-sqlite3']
   },
   define: {
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV)

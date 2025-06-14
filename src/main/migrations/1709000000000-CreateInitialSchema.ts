@@ -20,11 +20,9 @@ export class CreateInitialSchema1709000000000 implements MigrationInterface {
         "bank_number" integer NOT NULL,
         "library_id" integer NOT NULL,
         "name" varchar NOT NULL,
-        "system_name" varchar NOT NULL,
         "type" varchar CHECK( type IN ('patch','sequence') ) NOT NULL,
         "content" blob,
         "fingerprint" varchar NOT NULL,
-        CONSTRAINT "UQ_banks_fingerprint" UNIQUE ("fingerprint"),
         CONSTRAINT "FK_banks_library" FOREIGN KEY ("library_id") REFERENCES "libraries" ("id") ON DELETE CASCADE
       )
     `);
@@ -40,7 +38,6 @@ export class CreateInitialSchema1709000000000 implements MigrationInterface {
         "default_patch" boolean NOT NULL DEFAULT (0),
         "favorited" boolean NOT NULL DEFAULT (0),
         "tags" text,
-        CONSTRAINT "UQ_patches_fingerprint" UNIQUE ("fingerprint"),
         CONSTRAINT "FK_patches_bank" FOREIGN KEY ("bank_id") REFERENCES "banks" ("id") ON DELETE CASCADE
       )
     `);
@@ -53,16 +50,15 @@ export class CreateInitialSchema1709000000000 implements MigrationInterface {
         "name" varchar NOT NULL,
         "fingerprint" varchar NOT NULL,
         "content" text NOT NULL,
-        CONSTRAINT "UQ_patch_sequences_fingerprint" UNIQUE ("fingerprint"),
         CONSTRAINT "FK_patch_sequences_bank" FOREIGN KEY ("bank_id") REFERENCES "banks" ("id") ON DELETE CASCADE
       )
     `);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP TABLE "patch_sequences"`);
-    await queryRunner.query(`DROP TABLE "patches"`);
-    await queryRunner.query(`DROP TABLE "banks"`);
-    await queryRunner.query(`DROP TABLE "libraries"`);
+    await queryRunner.query('DROP TABLE "patch_sequences"');
+    await queryRunner.query('DROP TABLE "patches"');
+    await queryRunner.query('DROP TABLE "banks"');
+    await queryRunner.query('DROP TABLE "libraries"');
   }
 } 

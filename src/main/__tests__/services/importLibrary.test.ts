@@ -7,6 +7,7 @@ import { Library } from '../../entities/library.entity';
 import { Bank } from '../../entities/bank.entity';
 import { Patch } from '../../entities/patch.entity';
 import { PatchSequence } from '../../entities/patch-sequence.entity';
+import { padNumber } from '../../utils';
 
 describe('ImportLibrary Service', () => {
   let dataSource: DataSource;
@@ -375,10 +376,6 @@ describe('ImportLibrary Service', () => {
     });
   });
 });
-
-function padNumber(num: number): string {
-  return num.toString().padStart(2, '0');
-}
 
 async function createTestLibraryStructure(rootDir: string): Promise<void> {
   const libraryDir = path.join(rootDir, 'library');

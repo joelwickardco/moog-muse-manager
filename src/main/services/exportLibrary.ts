@@ -1,10 +1,11 @@
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import { DataSource } from 'typeorm';
-import { LibraryRepository } from '../repositories/library.repository';
-import { BankRepository } from '../repositories/bank.repository';
-import { PatchRepository } from '../repositories/patch.repository';
-import { PatchSequenceRepository } from '../repositories/patch-sequence.repository';
+import { DataSource, In } from 'typeorm';
+import { Library } from '../entities/library.entity';
+import { Bank } from '../entities/bank.entity';
+import { Patch } from '../entities/patch.entity';
+import { PatchSequence } from '../entities/patch-sequence.entity';
+import { padNumber } from '../utils';
 
 interface ExportResult {
   success: boolean;
@@ -19,13 +20,13 @@ export async function exportLibrary(
 ): Promise<ExportResult> {
   try {
     // Initialize repositories
-    const libraryRepo = new LibraryRepository(dataSource);
-    const bankRepo = new BankRepository(dataSource);
-    const patchRepo = new PatchRepository(dataSource);
-    const sequenceRepo = new PatchSequenceRepository(dataSource);
+    const libraryRepo = dataSource.getRepository(Library);
+    const bankRepo = dataSource.getRepository(Bank);
+    const patchRepo = dataSource.getRepository(Patch);
+    const sequenceRepo = dataSource.getRepository(PatchSequence);
 
     // Get library
-    const library = await libraryRepo.findOne(libraryId);
+    const library = await libraryRepo.findOneBy({ id: libraryId });
     if (!library) {
       return {
         success: false,
@@ -42,7 +43,7 @@ export async function exportLibrary(
     await fs.mkdir(innerLibraryDir, { recursive: true });
 
     // Get all banks
-    const banks = await bankRepo.findByLibraryId(libraryId);
+    const banks = await bankRepo.find({ where: { library: { id: libraryId } } });
     if (banks.length !== 32) { // 16 patch banks + 16 sequence banks
       return {
         success: false,
@@ -50,76 +51,58 @@ export async function exportLibrary(
       };
     }
 
-    // Process patch banks
-    const patchBanks = banks.filter(bank => bank.type === 'patch');
-    for (const bank of patchBanks) {
-      const bankDir = path.join(innerLibraryDir, bank.system_name);
+    // Create bank directories and export patches
+    for (const bank of banks) {
+      const bankDir = path.join(innerLibraryDir, bank.name);
       await fs.mkdir(bankDir, { recursive: true });
 
-      // Write bank file
+      // Export patches for this bank
+      const patches = await patchRepo.find({
+        where: { bank_id: bank.id },
+        order: { patch_number: 'ASC' }
+      });
+
       if (!bank.content) {
-        return {
-          success: false,
-          message: `Missing bank content for ${bank.system_name}`
-        };
-      }
-      const bankFilePath = path.join(bankDir, `${bank.name}.bank`);
-      await fs.writeFile(bankFilePath, bank.content);
-
-      // Get patches for this bank
-      const patches = await patchRepo.findByBankId(bank.id);
-      if (patches.length !== 16) {
-        return {
-          success: false,
-          message: `Invalid number of patches found in bank ${bank.system_name}`
-        };
+        throw new Error(`Missing bank content for ${bank.name}`);
       }
 
-      // Process patches
+      // Verify we have the correct number of patches
+      if (patches.length !== 8) {
+        throw new Error(`Invalid number of patches found in bank ${bank.name}`);
+      }
+
+      // Export each patch
       for (const patch of patches) {
-        const patchDir = path.join(bankDir, `patch${padNumber(patch.patch_number)}`);
-        await fs.mkdir(patchDir, { recursive: true });
-
-        // Write patch file if not default
-        if (!patch.default_patch && patch.content) {
-          const patchFilePath = path.join(patchDir, `${patch.name}.mmp`);
-          await fs.writeFile(patchFilePath, patch.content);
-        }
+        const patchFile = path.join(bankDir, `${patch.patch_number.toString().padStart(2, '0')}.syx`);
+        await fs.writeFile(patchFile, patch.content);
       }
     }
 
-    // Process sequence banks
-    const sequenceBanks = banks.filter(bank => bank.type === 'sequence');
-    const sequencesDir = path.join(innerLibraryDir, 'sequences');
-    await fs.mkdir(sequencesDir, { recursive: true });
+    // Export sequences if any exist
+    const sequences = await sequenceRepo.find({
+      where: { bank_id: In(banks.map(b => b.id)) }
+    });
 
-    for (const bank of sequenceBanks) {
-      const seqBankDir = path.join(sequencesDir, bank.system_name);
-      await fs.mkdir(seqBankDir, { recursive: true });
+    if (sequences.length > 0) {
+      const sequencesDir = path.join(innerLibraryDir, 'sequences');
+      await fs.mkdir(sequencesDir, { recursive: true });
 
-      // Get sequences for this bank
-      const sequences = await sequenceRepo.findByBankId(bank.id);
-      if (sequences.length !== 16) {
-        return {
-          success: false,
-          message: `Invalid number of sequences found in bank ${bank.system_name}`
-        };
-      }
+      // Group sequences by bank
+      for (const bank of banks) {
+        const seqBankDir = path.join(sequencesDir, bank.name);
+        await fs.mkdir(seqBankDir, { recursive: true });
 
-      // Process sequences
-      for (const sequence of sequences) {
-        const seqDir = path.join(seqBankDir, `seq${padNumber(sequence.sequence_number)}`);
-        await fs.mkdir(seqDir, { recursive: true });
+        const bankSequences = sequences.filter(s => s.bank_id === bank.id);
 
-        // Write sequence file
-        if (sequence.content) {
-          const seqFilePath = path.join(seqDir, `${sequence.name}.mmseq`);
-          await fs.writeFile(seqFilePath, sequence.content);
-        } else {
-          return {
-            success: false,
-            message: `Missing sequence content in ${seqDir}`
-          };
+        // Verify we have the correct number of sequences
+        if (bankSequences.length !== 8) {
+          throw new Error(`Invalid number of sequences found in bank ${bank.name}`);
+        }
+
+        // Export each sequence
+        for (const sequence of bankSequences) {
+          const sequenceFile = path.join(seqBankDir, `${sequence.sequence_number.toString().padStart(2, '0')}.syx`);
+          await fs.writeFile(sequenceFile, sequence.content);
         }
       }
     }
@@ -135,9 +118,4 @@ export async function exportLibrary(
       message: error instanceof Error ? error.message : 'Unknown error'
     };
   }
-}
-
-// Helper function to pad numbers with leading zeros
-function padNumber(num: number): string {
-  return num.toString().padStart(2, '0');
 } 

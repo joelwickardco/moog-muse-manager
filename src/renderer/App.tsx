@@ -1,362 +1,273 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Patch } from '../main/entities/patch.entity';
 import { Library } from '../main/entities/library.entity';
-import { Accordion, AccordionItemWrapper } from './components/Accordion';
-import { AppMenu } from './components/AppMenu';
+import { Bank } from '../main/entities/bank.entity';
+import { PatchGrid } from './components/PatchGrid';
+import { CopyToDrawer } from './components/CopyToDrawer';
 
 // Define the type for the window object with our electron API
 declare global {
   interface Window {
     electronAPI: {
-      importPatches: () => Promise<{ path: string; bank: string; library: string }[]>;
-      exportPatches: (patches: string[]) => Promise<boolean>;
-      loadPatches: () => Promise<Patch[]>;
       updatePatch: (path: string, updates: Partial<Patch>) => Promise<boolean>;
       loadLibraries: () => Promise<Library[]>;
-      loadBanksByLibrary: (library: number) => Promise<{ name: string }[]>;
-      getPatchesByLibrary: (libraryId: number) => Promise<Patch[]>;
+      loadBanksByLibrary: (library: number) => Promise<Bank[]>;
+      getPatchesByBank: (libraryId: number, bankId: number) => Promise<Patch[]>;
       importLibrary: () => Promise<void>;
       exportLibrary: (libraryId: number) => Promise<void>;
+      deleteLibrary: (libraryId: number) => Promise<boolean>;
+      onImportLibrary: (callback: (path: string) => void) => void;
+      onExportLibrary: (callback: (path: string) => void) => void;
+      onDeleteLibrary: (callback: () => void) => void;
     }
   }
 }
 
-// Add a helper type for tracking tag input per patch
-interface TagInputState {
-  [patchId: string]: string;
-}
-
 const App: React.FC = () => {
-  const [patches, setPatches] = useState<Patch[]>([]);
   const [libraries, setLibraries] = useState<Library[]>([]);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [selectedLibrary, setSelectedLibrary] = useState<string>('all');
-  const menuRef = useRef<HTMLDivElement>(null);
-  const [openBankIndex, setOpenBankIndex] = useState<number | null>(null);
-  const [tagInputs, setTagInputs] = useState<TagInputState>({});
+  const [selectedLibrary, setSelectedLibrary] = useState<Library | null>(null);
+  const [banks, setBanks] = useState<Bank[]>([]);
+  const [selectedBank, setSelectedBank] = useState<Bank | null>(null);
+  const [patches, setPatches] = useState<Patch[]>([]);
+  const [selectedPatches, setSelectedPatches] = useState<Set<string>>(new Set());
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isCopyDrawerOpen, setIsCopyDrawerOpen] = useState(false);
 
-  // Only load libraries on mount
+  // Load libraries on mount
   useEffect(() => {
     const loadLibraries = async () => {
       try {
         const loadedLibraries = await window.electronAPI.loadLibraries();
         setLibraries(loadedLibraries);
+        if (loadedLibraries.length > 0) {
+          setSelectedLibrary(loadedLibraries[0]);
+        }
       } catch (error) {
         console.error('Error loading libraries:', error);
+        setError('Failed to load libraries');
       }
     };
     loadLibraries();
   }, []);
 
-  const handleImport = async (): Promise<void> => {
-    try {
-      await window.electronAPI.importPatches();
-      const loadedPatches = await window.electronAPI.loadPatches();
-      setPatches(loadedPatches);
-      setMenuOpen(false);
-    } catch (error) {
-      console.error('Error importing patches:', error);
-    }
-  };
-
-  const handlePatchEdit = async (patchId: string, field: keyof Patch, value: any) => {
-    try {
-      const success = await window.electronAPI.updatePatch(patchId, { [field]: value });
-      if (success) {
-        setPatches(patches.map(patch => 
-          patch.id.toString() === patchId 
-            ? { ...patch, [field]: value }
-            : patch
-        ));
-      }
-    } catch (error) {
-      console.error('Error updating patch:', error);
-    }
-  };
-
-  const handleLibraryChange = async (libraryId: string) => {
-    setSelectedLibrary(libraryId);
-    if (libraryId === 'all') {
-      const allPatches = await window.electronAPI.loadPatches();
-      setPatches(allPatches);
-    } else {
-      const libraryPatches = await window.electronAPI.getPatchesByLibrary(parseInt(libraryId));
-      setPatches(libraryPatches);
-    }
-  };
-
-  // Group patches by bank
-  const patchesByBank = patches.reduce((acc, patch) => {
-    const bank = patch.bank || 'Uncategorized';
-    if (!acc[bank]) {
-      acc[bank] = [];
-    }
-    acc[bank].push(patch);
-    return acc;
-  }, {} as Record<string, Patch[]>);
-
-  // Close menu on outside click
+  // Load banks when library changes
   useEffect(() => {
-    if (!menuOpen) return;
-    function handleClickOutside(event: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setMenuOpen(false);
+    const loadBanks = async () => {
+      if (selectedLibrary) {
+        try {
+          setIsLoading(true);
+          const libraryBanks = await window.electronAPI.loadBanksByLibrary(selectedLibrary.id);
+          setBanks(libraryBanks);
+          if (libraryBanks.length > 0) {
+            setSelectedBank(libraryBanks[0]);
+          } else {
+            setSelectedBank(null);
+          }
+        } catch (error) {
+          console.error('Error loading banks:', error);
+          setError('Failed to load banks');
+        } finally {
+          setIsLoading(false);
+        }
+      } else {
+        setBanks([]);
+        setSelectedBank(null);
+      }
+    };
+    loadBanks();
+  }, [selectedLibrary]);
+
+  // Load patches when bank changes
+  useEffect(() => {
+    const loadPatches = async () => {
+      if (selectedLibrary && selectedBank) {
+        try {
+          setIsLoading(true);
+          const bankPatches = await window.electronAPI.getPatchesByBank(selectedLibrary.id, selectedBank.id);
+          setPatches(bankPatches);
+          setSelectedPatches(new Set()); // Clear selection when bank changes
+        } catch (error) {
+          console.error('Error loading patches:', error);
+          setError('Failed to load patches');
+        } finally {
+          setIsLoading(false);
+        }
+      } else {
+        setPatches([]);
+        setSelectedPatches(new Set());
+      }
+    };
+    loadPatches();
+  }, [selectedLibrary, selectedBank]);
+
+  const handleLibraryChange = (libraryId: string) => {
+    const library = libraries.find(l => l.id.toString() === libraryId);
+    setSelectedLibrary(library || null);
+  };
+
+  const handleBankChange = (bankId: string) => {
+    const bank = banks.find(b => b.id.toString() === bankId);
+    setSelectedBank(bank || null);
+  };
+
+  const handlePatchSelect = (patchId: string) => {
+    setSelectedPatches(prev => {
+      const newSelection = new Set(prev);
+      if (newSelection.has(patchId)) {
+        newSelection.delete(patchId);
+      } else {
+        newSelection.add(patchId);
+      }
+      return newSelection;
+    });
+  };
+
+  const handlePatchToggleFavorite = async (patchId: string) => {
+    const patch = patches.find(p => p.id.toString() === patchId);
+    if (patch) {
+      try {
+        await window.electronAPI.updatePatch(patchId, { favorited: !patch.favorited });
+        setPatches(patches.map(p => 
+          p.id.toString() === patchId 
+            ? { ...p, favorited: !p.favorited }
+            : p
+        ));
+      } catch (error) {
+        console.error('Error updating patch:', error);
       }
     }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [menuOpen]);
-
-  // Add a handler for tag input change
-  const handleTagInputChange = (patchId: string, value: string) => {
-    setTagInputs((prev) => ({ ...prev, [patchId]: value }));
   };
 
-  // Add a handler for adding a tag
-  const handleAddTag = async (patchId: string) => {
-    const patch = patches.find((p) => p.id.toString() === patchId);
-    const newTag = tagInputs[patchId]?.trim();
-    if (!patch || !newTag || patch.tags.includes(newTag)) return;
-    const updatedTags = [...patch.tags, newTag];
-    const success = await window.electronAPI.updatePatch(patchId, { tags: updatedTags });
-    if (success) {
-      setPatches(
-        patches.map((p) =>
-          p.id.toString() === patchId ? { ...p, tags: updatedTags } : p
-        )
-      );
-      setTagInputs((prev) => ({ ...prev, [patchId]: '' }));
+  const handlePatchTagRemove = async (patchId: string, tagToRemove: string) => {
+    const patch = patches.find(p => p.id.toString() === patchId);
+    if (patch) {
+      const currentTags = JSON.parse(patch.tags || '[]');
+      const updatedTags = currentTags.filter((tag: string) => tag !== tagToRemove);
+      try {
+        await window.electronAPI.updatePatch(patchId, { tags: JSON.stringify(updatedTags) });
+        setPatches(patches.map(p => 
+          p.id.toString() === patchId 
+            ? { ...p, tags: JSON.stringify(updatedTags) }
+            : p
+        ));
+      } catch (error) {
+        console.error('Error updating patch:', error);
+      }
     }
   };
 
-  const handleImportLibrary = async () => {
-    try {
-      await window.electronAPI.importLibrary();
-      const loadedLibraries = await window.electronAPI.loadLibraries();
-      setLibraries(loadedLibraries);
-    } catch (error) {
-      console.error('Error importing library:', error);
-    }
-  };
-
-  const handleExportLibrary = async () => {
-    if (selectedLibrary === 'all') {
-      console.error('Please select a library to export');
-      return;
-    }
-    try {
-      await window.electronAPI.exportLibrary(parseInt(selectedLibrary));
-    } catch (error) {
-      console.error('Error exporting library:', error);
+  const handlePatchTagAdd = async (patchId: string, newTag: string) => {
+    const patch = patches.find(p => p.id.toString() === patchId);
+    if (patch) {
+      const currentTags = JSON.parse(patch.tags || '[]');
+      if (!currentTags.includes(newTag)) {
+        const updatedTags = [...currentTags, newTag];
+        try {
+          await window.electronAPI.updatePatch(patchId, { tags: JSON.stringify(updatedTags) });
+          setPatches(patches.map(p => 
+            p.id.toString() === patchId 
+              ? { ...p, tags: JSON.stringify(updatedTags) }
+              : p
+          ));
+        } catch (error) {
+          console.error('Error updating patch:', error);
+        }
+      }
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-4">
-      <AppMenu 
-        onImportLibrary={handleImportLibrary} 
-        onExportLibrary={handleExportLibrary}
-      />
+    <div className="min-h-screen bg-white text-gray-900 p-4">
       <div className="max-w-7xl mx-auto">
-        <div className="mb-6">
-          <select
-            value={selectedLibrary}
-            onChange={(e) => handleLibraryChange(e.target.value)}
-            className="w-full p-2 bg-gray-800 border border-gray-700 rounded"
-          >
-            <option value="all">All Libraries</option>
-            {libraries.map((library) => (
-              <option key={library.id} value={library.id}>
-                {library.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {selectedLibrary !== 'all' && (
-          <div className="space-y-4">
-            {Object.entries(patchesByBank).map(([bank, bankPatches], index) => (
-              <div key={bank} className="border border-gray-700 rounded-lg overflow-hidden">
-                <button
-                  className="w-full px-4 py-3 text-left bg-gray-800 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  onClick={() => {
-                    const newOpenIndex = openBankIndex === index ? -1 : index;
-                    setOpenBankIndex(newOpenIndex);
-                  }}
-                >
-                  <div className="flex justify-between items-center">
-                    <span className="font-medium text-gray-200">
-                      {bank} ({bankPatches.length} patches)
-                    </span>
-                    <svg
-                      className={`w-5 h-5 transform transition-transform ${
-                        openBankIndex === index ? 'rotate-180' : ''
-                      }`}
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M19 9l-7 7-7-7"
-                      />
-                    </svg>
-                  </div>
-                </button>
-                <div
-                  className={`overflow-hidden transition-all duration-300 ease-in-out ${
-                    openBankIndex === index ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'
-                  }`}
-                >
-                  <div className="p-4 bg-gray-900">
-                    <div className="space-y-2">
-                      {bankPatches.map((patch) => (
-                        <div
-                          key={patch.id}
-                          className="p-3 bg-gray-800 rounded hover:bg-gray-700 transition-colors"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <h3 className="font-medium">{patch.name}</h3>
-                              <p className="text-sm text-gray-400">{patch.path}</p>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <label className="flex items-center space-x-2">
-                                <input
-                                  type="checkbox"
-                                  checked={patch.favorited}
-                                  onChange={() =>
-                                    handlePatchEdit(patch.id.toString(), 'favorited', !patch.favorited)
-                                  }
-                                  className="form-checkbox h-4 w-4 text-blue-500"
-                                />
-                                <span className="text-sm">Favorite</span>
-                              </label>
-                            </div>
-                          </div>
-                          {patch.tags && patch.tags.length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {patch.tags.map((tag: string, index: number) => (
-                                <span
-                                  key={index}
-                                  className="px-2 py-1 bg-blue-900 text-blue-200 text-xs rounded"
-                                >
-                                  {tag}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-xs text-gray-400">Tags:</span>
-                            <span className="text-xs">
-                              {Array.isArray(patch.tags) && patch.tags.length > 0
-                                ? patch.tags.join(', ')
-                                : 'No tags'}
-                            </span>
-                            {/* Tag input */}
-                            <input
-                              type="text"
-                              className="ml-2 p-1 text-xs rounded bg-gray-800 border border-gray-700 text-white"
-                              placeholder="Add tag"
-                              value={tagInputs[patch.id] || ''}
-                              onChange={(e) => handleTagInputChange(patch.id.toString(), e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') handleAddTag(patch.id.toString());
-                              }}
-                              style={{ width: 80 }}
-                            />
-                            <button
-                              className="text-xs px-2 py-1 bg-blue-600 rounded hover:bg-blue-700"
-                              onClick={() => handleAddTag(patch.id.toString())}
-                              disabled={!tagInputs[patch.id]?.trim() || patch.tags.includes(tagInputs[patch.id]?.trim())}
-                            >
-                              Add
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {selectedLibrary === 'all' && (
-          <div className="space-y-2">
-            {patches.map((patch) => (
-              <div
-                key={patch.id}
-                className="p-3 bg-gray-800 rounded hover:bg-gray-700 transition-colors"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="font-medium">{patch.name}</h3>
-                    <p className="text-sm text-gray-400">{patch.path}</p>
-            </div>
-                  <div className="flex items-center space-x-2">
-                    <label className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      checked={patch.favorited}
-                        onChange={() =>
-                          handlePatchEdit(patch.id.toString(), 'favorited', !patch.favorited)
-                        }
-                        className="form-checkbox h-4 w-4 text-blue-500"
-                    />
-                      <span className="text-sm">Favorite</span>
-                    </label>
-                  </div>
-                </div>
-                {patch.tags && patch.tags.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {patch.tags.map((tag: string, index: number) => (
-                      <span
-                        key={index}
-                        className="px-2 py-1 bg-blue-900 text-blue-200 text-xs rounded"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-xs text-gray-400">Tags:</span>
-                  <span className="text-xs">
-                    {Array.isArray(patch.tags) && patch.tags.length > 0
-                      ? patch.tags.join(', ')
-                      : 'No tags'}
-                  </span>
-                  {/* Tag input */}
-                    <input
-                      type="text"
-                    className="ml-2 p-1 text-xs rounded bg-gray-800 border border-gray-700 text-white"
-                    placeholder="Add tag"
-                    value={tagInputs[patch.id] || ''}
-                    onChange={(e) => handleTagInputChange(patch.id.toString(), e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleAddTag(patch.id.toString());
-                    }}
-                    style={{ width: 80 }}
-                  />
-                  <button
-                    className="text-xs px-2 py-1 bg-blue-600 rounded hover:bg-blue-700"
-                    onClick={() => handleAddTag(patch.id.toString())}
-                    disabled={!tagInputs[patch.id]?.trim() || patch.tags.includes(tagInputs[patch.id]?.trim())}
-                  >
-                    Add
-                  </button>
-                </div>
-                  </div>
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-bold">Moog Muse Manager</h1>
+          <div className="flex gap-4">
+            <select
+              value={selectedLibrary?.id.toString() || ''}
+              onChange={(e) => handleLibraryChange(e.target.value)}
+              className="bg-white border border-gray-300 rounded px-3 py-2 text-gray-900"
+            >
+              {libraries.map((library) => (
+                <option key={library.id} value={library.id.toString()}>
+                  {library.name}
+                </option>
               ))}
+            </select>
+            <select
+              value={selectedBank?.id.toString() || ''}
+              onChange={(e) => handleBankChange(e.target.value)}
+              className="bg-white border border-gray-300 rounded px-3 py-2 text-gray-900"
+            >
+              {banks.map((bank) => (
+                <option key={bank.id} value={bank.id.toString()}>
+                  Bank {bank.id}: {bank.name}
+                </option>
+              ))}
+            </select>
+            {selectedPatches.size > 0 && (
+              <button
+                onClick={() => setIsCopyDrawerOpen(true)}
+                className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-white"
+              >
+                Copy {selectedPatches.size} Patches
+              </button>
+            )}
           </div>
-        )}
         </div>
+
+        {isLoading ? (
+          <div className="text-center py-8">
+            <span className="text-gray-500">Loading...</span>
+          </div>
+        ) : error ? (
+          <div className="text-center py-8 text-red-600">
+            {error}
+          </div>
+        ) : (
+          <PatchGrid
+            patches={patches.map(patch => ({
+              id: patch.id.toString(),
+              name: patch.name,
+              tags: JSON.parse(patch.tags || '[]'),
+              favorited: patch.favorited,
+              selected: selectedPatches.has(patch.id.toString())
+            }))}
+            onToggleFavorite={handlePatchToggleFavorite}
+            onSelect={handlePatchSelect}
+            onTagRemove={handlePatchTagRemove}
+            onTagAdd={handlePatchTagAdd}
+          />
+        )}
+
+        <CopyToDrawer
+          isOpen={isCopyDrawerOpen}
+          onClose={() => setIsCopyDrawerOpen(false)}
+          libraries={libraries.map(l => l.name)}
+          selectedLibrary={selectedLibrary?.name || ''}
+          selectedBank={selectedBank?.name || ''}
+          slots={Array.from({ length: 16 }, (_, i) => ({
+            index: i,
+            occupied: false, // TODO: Implement slot occupation check
+            selected: false
+          }))}
+          onLibraryChange={(value) => {
+            const library = libraries.find(l => l.name === value);
+            if (library) setSelectedLibrary(library);
+          }}
+          onBankChange={(value) => {
+            const bank = banks.find(b => b.name === value);
+            if (bank) setSelectedBank(bank);
+          }}
+          onSlotToggle={(index) => {
+            // TODO: Implement slot selection logic
+          }}
+          onConfirm={() => {
+            // TODO: Implement copy confirmation logic
+            setIsCopyDrawerOpen(false);
+          }}
+        />
+      </div>
     </div>
   );
 };

@@ -1,21 +1,21 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu, MenuItemConstructorOptions } from 'electron';
 import path from 'path';
 import fs from 'fs';
-import { DataSource } from 'typeorm';
-import { LibraryRepository } from './repositories/library.repository';
-import { BankRepository } from './repositories/bank.repository';
-import { PatchRepository } from './repositories/patch.repository';
-import { PatchSequenceRepository } from './repositories/patch-sequence.repository';
+import { Repository } from 'typeorm';
 import { importLibrary } from './services/importLibrary';
 import { exportLibrary } from './services/exportLibrary';
+import { Library } from './entities/library.entity';
 import { Patch } from './entities/patch.entity';
+import { Bank } from './entities/bank.entity';
+import { PatchSequence } from './entities/patch-sequence.entity';
 import { AppDataSource } from './data-source';
+import { LibraryValidator } from './services/validateLibrary';
 
 // Initialize repositories
-let libraryRepo: LibraryRepository;
-let bankRepo: BankRepository;
-let patchRepo: PatchRepository;
-let patchSequenceRepo: PatchSequenceRepository;
+let libraryRepo: Repository<Library>;
+let bankRepo: Repository<Bank>;
+let patchRepo: Repository<Patch>;
+let patchSequenceRepo: Repository<PatchSequence>;
 
 // Function to initialize the database
 const initializeDatabase = async () => {
@@ -25,10 +25,10 @@ const initializeDatabase = async () => {
     console.log('Database initialized successfully.');
 
     // Initialize repositories
-    libraryRepo = new LibraryRepository(AppDataSource);
-    bankRepo = new BankRepository(AppDataSource);
-    patchRepo = new PatchRepository(AppDataSource);
-    patchSequenceRepo = new PatchSequenceRepository(AppDataSource);
+    libraryRepo = AppDataSource.getRepository(Library);
+    bankRepo = AppDataSource.getRepository(Bank);
+    patchRepo = AppDataSource.getRepository(Patch);
+    patchSequenceRepo = AppDataSource.getRepository(PatchSequence);
   } catch (error) {
     console.error('Error initializing database:', error);
     app.quit(); // Quit the app if initialization fails
@@ -51,6 +51,151 @@ const createWindow = (): void => {
       contextIsolation: true,
     },
   });
+
+  // Create the application menu
+  const template: MenuItemConstructorOptions[] = [
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'Import Library',
+          click: async () => {
+            const result = await dialog.showOpenDialog(mainWindow, {
+              properties: ['openDirectory'],
+              title: 'Select Library Directory'
+            });
+            if (!result.canceled && result.filePaths.length > 0) {
+              mainWindow.webContents.send('import-library', result.filePaths[0]);
+            }
+          }
+        },
+        {
+          label: 'Export Library',
+          click: async () => {
+            const result = await dialog.showOpenDialog(mainWindow, {
+              properties: ['openDirectory'],
+              title: 'Select Export Directory'
+            });
+            if (!result.canceled && result.filePaths.length > 0) {
+              mainWindow.webContents.send('export-library', result.filePaths[0]);
+            }
+          }
+        },
+        {
+          label: 'Validate Library',
+          click: async () => {
+            const result = await dialog.showOpenDialog(mainWindow, {
+              properties: ['openDirectory'],
+              title: 'Select Library Directory to Validate'
+            });
+            if (!result.canceled && result.filePaths.length > 0) {
+              const validator = new LibraryValidator();
+              const validationResult = validator.validateLibrary(result.filePaths[0]);
+              
+              // Format the validation results
+              const message = validationResult.isValid 
+                ? 'Library validation passed successfully!'
+                : 'Library validation failed.';
+              
+              const detail = [
+                `Banks found: ${validationResult.details.bankCount}`,
+                `Patches found: ${validationResult.details.patchCount}`,
+                `Sequences found: ${validationResult.details.sequenceCount}`,
+                '',
+                'Errors:',
+                ...validationResult.errors.map((error: string) => `• ${error}`),
+                '',
+                'Warnings:',
+                ...validationResult.warnings.map((warning: string) => `• ${warning}`),
+                '',
+                'Missing Items:',
+                ...validationResult.details.missingBanks.map((bank: string) => `• ${bank}`),
+                ...validationResult.details.missingPatches.map((patch: string) => `• ${patch}`),
+                ...validationResult.details.missingSequences.map((seq: string) => `• ${seq}`)
+              ].join('\n');
+
+              await dialog.showMessageBox(mainWindow, {
+                type: validationResult.isValid ? 'info' : 'warning',
+                title: 'Library Validation Results',
+                message,
+                detail,
+                buttons: ['OK'],
+                defaultId: 0
+              });
+            }
+          }
+        },
+        {
+          label: 'Delete Selected Library',
+          click: async () => {
+            const result = await dialog.showMessageBox(mainWindow, {
+              type: 'warning',
+              title: 'Delete Library',
+              message: 'Are you sure you want to delete the selected library?',
+              detail: 'This action cannot be undone.',
+              buttons: ['Cancel', 'Delete'],
+              defaultId: 0,
+              cancelId: 0
+            });
+            
+            if (result.response === 1) { // User clicked Delete
+              mainWindow.webContents.send('delete-library');
+            }
+          }
+        },
+        { type: 'separator' },
+        {
+          label: 'Exit',
+          click: () => {
+            app.quit();
+          }
+        }
+      ]
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' }
+      ]
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+    },
+    {
+      label: 'Help',
+      submenu: [
+        {
+          label: 'About',
+          click: async () => {
+            await dialog.showMessageBox(mainWindow, {
+              title: 'About Moog Muse Manager',
+              message: 'Moog Muse Manager',
+              detail: 'Version 1.0.0\nA tool for managing Moog Muse libraries and patches.'
+            });
+          }
+        }
+      ]
+    }
+  ];
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
 
   // and load the index.html of the app.
   if (process.env.NODE_ENV === 'development') {
@@ -120,27 +265,6 @@ ipcMain.handle('import-library', async () => {
   await importLibrary(rootDir, AppDataSource);
 });
 
-ipcMain.handle('import-patches', async () => {
-  const { filePaths } = await dialog.showOpenDialog({
-    properties: ['openDirectory'],
-  });
-
-  if (filePaths.length === 0) {
-    return [];
-  }
-
-  let rootDir = filePaths[0];
-  console.log('Selected directory:', rootDir);
-
-  // Check if the selected directory is a library directory
-  const libraryPath = path.join(rootDir, 'Library');
-  if (fs.existsSync(libraryPath) && fs.statSync(libraryPath).isDirectory()) {
-    rootDir = libraryPath;
-  }
-
-  return importLibrary(rootDir, AppDataSource);
-});
-
 ipcMain.handle('update-patch', async (_, patchId: string, updates: Partial<Patch>) => {
   const id = parseInt(patchId);
   if (updates.favorited !== undefined) {
@@ -153,31 +277,55 @@ ipcMain.handle('update-patch', async (_, patchId: string, updates: Partial<Patch
 });
 
 ipcMain.handle('load-libraries', async () => {
-  return await libraryRepo.findAll();
+  return await libraryRepo.find();
 });
 
 ipcMain.handle('load-banks-by-library', async (_, libraryId: number) => {
-  return await bankRepo.findByLibraryId(libraryId);
-});
-
-ipcMain.handle('get-patches-by-library', async (_, libraryId: number) => {
-  const banks = await bankRepo.findByLibraryId(libraryId);
-  const patches = [];
-  for (const bank of banks) {
-    const bankPatches = await patchRepo.findByBankId(bank.id);
-    patches.push(...bankPatches);
-  }
-  return patches;
-});
-
-// Add new IPC handler for loading banks
-ipcMain.handle('load-banks', async () => {
-  return await bankRepo.findAll();
+  return await bankRepo.find({ where: { type: 'patch', library: { id: libraryId } } });
 });
 
 // Add new IPC handler for getting patches by bank
-ipcMain.handle('get-patches-for-bank', async (_, bankId: number) => {
-  return await patchRepo.findByBankId(bankId);
+ipcMain.handle('get-patches-for-bank', async (_, libraryId: number, bankId: number) => {
+  // Verify the bank belongs to the specified library
+  const bank = await bankRepo.findOne({
+    where: { 
+      id: bankId,
+      library: { id: libraryId }
+    }
+  });
+
+  if (!bank) {
+    throw new Error('Bank not found in the specified library');
+  }
+
+  // Get all patches for the specified bank
+  return await patchRepo.find({
+    where: { bank: { id: bankId } },
+    order: { patch_number: 'ASC' }
+  });
+});
+
+// Add new IPC handler for deleting a library
+ipcMain.handle('delete-library', async (_, libraryId: number) => {
+  try {
+    // First delete all related patches and sequences
+    const banks = await bankRepo.find({ where: { library: { id: libraryId } } });
+    for (const bank of banks) {
+      await patchRepo.delete({ bank: { id: bank.id } });
+      await patchSequenceRepo.delete({ bank: { id: bank.id } });
+    }
+    
+    // Then delete all banks
+    await bankRepo.delete({ library: { id: libraryId } });
+    
+    // Finally delete the library
+    await libraryRepo.delete(libraryId);
+    
+    return true;
+  } catch (error) {
+    console.error('Error deleting library:', error);
+    return false;
+  }
 });
 
 // Clean up database connection when app quits

@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import { AppDataSource } from './data-source';
 
 async function runMigration() {

@@ -1,3 +1,4 @@
+require('reflect-metadata');
 // Mock electron app
 jest.mock('electron', () => ({
   app: {

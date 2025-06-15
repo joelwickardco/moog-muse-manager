@@ -201,25 +201,28 @@ async function getAllFiles(dir: string): Promise<string[]> {
 // Helper function to determine tags based on patch name
 const getImplicitTags = (patchName: string, bankName: string): string[] => {
   const tags: string[] = [];
-  
+
+  const name = patchName.toLowerCase();
+  const bank = bankName.toLowerCase();
+
   // Example conditions for adding tags
-  if (patchName.includes('bass') || bankName.includes('bass')) {
+  if (name.includes('bass') || bank.includes('bass')) {
     tags.push('bass');
   }
-  if (patchName.includes('lead') || bankName.includes('lead')) {
+  if (name.includes('lead') || bank.includes('lead')) {
     tags.push('lead');
   }
-  if (patchName.includes('pad') || bankName.includes('pad')) {
+  if (name.includes('pad') || bank.includes('pad')) {
     tags.push('pad');
   }
-  if (patchName.includes('string') || bankName.includes('string')) {
+  if (name.includes('string') || bank.includes('string')) {
     tags.push('strings');
   }
-  if (patchName.includes('pluck') || bankName.includes('pluck')) {
+  if (name.includes('pluck') || bank.includes('pluck')) {
     tags.push('pluck');
   }
   // Add more conditions as needed
-  
+
   return tags;
 };
 

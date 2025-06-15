@@ -30,7 +30,7 @@ describe('LibraryValidator', () => {
 
     it('should validate a complete and correct library structure', () => {
       // Mock a complete library structure
-      (fs.existsSync as jest.Mock).mockImplementation((path: string) => true);
+      (fs.existsSync as jest.Mock).mockImplementation((_path: string) => true);
       (fs.readdirSync as jest.Mock).mockImplementation((dirPath: string) => {
         if (dirPath === mockLibraryPath) {
           return Array.from({ length: 16 }, (_, i) => `bank${(i + 1).toString().padStart(2, '0')}`);

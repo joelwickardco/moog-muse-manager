@@ -5,7 +5,6 @@ import { Library } from '../entities/library.entity';
 import { Bank } from '../entities/bank.entity';
 import { Patch } from '../entities/patch.entity';
 import { PatchSequence } from '../entities/patch-sequence.entity';
-import { padNumber } from '../utils';
 
 interface ExportResult {
   success: boolean;

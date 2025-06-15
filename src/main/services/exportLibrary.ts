@@ -74,7 +74,10 @@ export async function exportLibrary(
 
       // Export each patch
       for (const patch of patches) {
-        const patchFile = path.join(bankDir, `${patch.patch_number.toString().padStart(2, '0')}.syx`);
+        const patchFile = path.join(
+          bankDir,
+          `${patch.patch_number.toString().padStart(2, '0')}.mmp`
+        );
         await fs.writeFile(patchFile, patch.content);
       }
     }
@@ -104,7 +107,10 @@ export async function exportLibrary(
 
         // Export each sequence
         for (const sequence of bankSequences) {
-          const sequenceFile = path.join(seqBankDir, `${sequence.sequence_number.toString().padStart(2, '0')}.syx`);
+          const sequenceFile = path.join(
+            seqBankDir,
+            `${sequence.sequence_number.toString().padStart(2, '0')}.mmseq`
+          );
           await fs.writeFile(sequenceFile, sequence.content);
         }
       }

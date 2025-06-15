@@ -1,4 +1,8 @@
 import React, { useState, useEffect } from 'react';
+
+function capitalizeWords(str: string): string {
+  return str.replace(/\b\w/g, char => char.toUpperCase());
+}
 import { Patch } from '../main/entities/patch.entity';
 import { Library } from '../main/entities/library.entity';
 import { Bank } from '../main/entities/bank.entity';
@@ -103,15 +107,17 @@ const App: React.FC = () => {
 
   // Listen for import-library event from the main process
   useEffect(() => {
-    window.electronAPI.onImportLibrary(async (dirPath: string) => {
-      await window.electronAPI.importLibrary();
-      // Reload libraries after import
-      const loadedLibraries = await window.electronAPI.loadLibraries();
-      setLibraries(loadedLibraries);
-      if (loadedLibraries.length > 0) {
-        setSelectedLibrary(loadedLibraries[0]);
-      }
-    });
+    if (window.electronAPI.onImportLibrary) {
+      window.electronAPI.onImportLibrary(async (_dirPath: string) => {
+        await window.electronAPI.importLibrary();
+        // Reload libraries after import
+        const loadedLibraries = await window.electronAPI.loadLibraries();
+        setLibraries(loadedLibraries);
+        if (loadedLibraries.length > 0) {
+          setSelectedLibrary(loadedLibraries[0]);
+        }
+      });
+    }
   }, []);
 
   const handleLibraryChange = (libraryId: string) => {
@@ -223,7 +229,7 @@ const App: React.FC = () => {
             >
               {banks.map((bank) => (
                 <option key={bank.id} value={bank.id.toString()}>
-                  Bank {bank.id}: {bank.name}
+                  bank: {capitalizeWords(bank.name)}
                 </option>
               ))}
             </select>

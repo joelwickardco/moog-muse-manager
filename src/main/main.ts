@@ -232,84 +232,137 @@ app.on('activate', () => {
 
 // Register IPC handlers
 ipcMain.handle('export-library', async (_: unknown, libraryId: number): Promise<void> => {
+  console.log(`[IPC] Export library request received for library ID: ${libraryId}`);
   const { filePaths } = await dialog.showOpenDialog({
     properties: ['openDirectory'],
   });
 
   if (filePaths.length === 0) {
+    console.log('[IPC] Export library cancelled - no directory selected');
     return;
   }
 
   const exportDir = filePaths[0];
-  console.log('Selected export directory:', exportDir);
+  console.log(`[IPC] Selected export directory: ${exportDir}`);
 
-  await exportLibrary(
-    libraryId,
-    exportDir,
-    AppDataSource
-  );
+  try {
+    await exportLibrary(
+      libraryId,
+      exportDir,
+      AppDataSource
+    );
+    console.log('[IPC] Library export completed successfully');
+  } catch (error) {
+    console.error('[IPC] Error exporting library:', error);
+    throw error;
+  }
 });
 
 ipcMain.handle('import-library', async (): Promise<void> => {
+  console.log('[IPC] Import library request received');
   const { filePaths } = await dialog.showOpenDialog({
     properties: ['openDirectory'],
   });
 
   if (filePaths.length === 0) {
+    console.log('[IPC] Import library cancelled - no directory selected');
     return;
   }
 
   const rootDir = filePaths[0];
-  console.log('Selected directory:', rootDir);
+  console.log(`[IPC] Selected import directory: ${rootDir}`);
 
-  await importLibrary(rootDir, AppDataSource);
+  try {
+    await importLibrary(rootDir, AppDataSource);
+    console.log('[IPC] Library import completed successfully');
+  } catch (error) {
+    console.error('[IPC] Error importing library:', error);
+    throw error;
+  }
 });
 
 ipcMain.handle('update-patch', async (_: unknown, patchId: string, updates: Partial<Patch>): Promise<boolean> => {
+  console.log(`[IPC] Update patch request received for patch ID: ${patchId}`, updates);
   const id = parseInt(patchId);
-  if (updates.favorited !== undefined) {
-    await patchRepo.update(id, { favorited: updates.favorited });
+  try {
+    if (updates.favorited !== undefined) {
+      await patchRepo.update(id, { favorited: updates.favorited });
+      console.log(`[IPC] Updated favorite status for patch ${id} to ${updates.favorited}`);
+    }
+    if (updates.tags) {
+      await patchRepo.update(id, { tags: updates.tags });
+      console.log(`[IPC] Updated tags for patch ${id} to:`, updates.tags);
+    }
+    console.log('[IPC] Patch update completed successfully');
+    return true;
+  } catch (error) {
+    console.error('[IPC] Error updating patch:', error);
+    throw error;
   }
-  if (updates.tags) {
-    await patchRepo.update(id, { tags: updates.tags });
-  }
-  return true;
 });
 
 ipcMain.handle('load-libraries', async (): Promise<Library[]> => {
-  return await libraryRepo.find();
+  console.log('[IPC] Load libraries request received');
+  try {
+    const libraries = await libraryRepo.find();
+    console.log(`[IPC] Loaded ${libraries.length} libraries successfully`);
+    return libraries;
+  } catch (error) {
+    console.error('[IPC] Error loading libraries:', error);
+    throw error;
+  }
 });
 
 ipcMain.handle('load-banks-by-library', async (_: unknown, libraryId: number): Promise<Bank[]> => {
-  return await bankRepo.find({ where: { type: 'patch', library: { id: libraryId } } });
+  console.log(`[IPC] Load banks request received for library ID: ${libraryId}`);
+  try {
+    const banks = await bankRepo.find({ where: { type: 'patch', library: { id: libraryId } } });
+    console.log(`[IPC] Loaded ${banks.length} banks for library ${libraryId}`);
+    return banks;
+  } catch (error) {
+    console.error('[IPC] Error loading banks:', error);
+    throw error;
+  }
 });
 
 // Add new IPC handler for getting patches by bank
 ipcMain.handle('get-patches-for-bank', async (_: unknown, libraryId: number, bankId: number): Promise<Patch[]> => {
-  // Verify the bank belongs to the specified library
-  const bank = await bankRepo.findOne({
-    where: { 
-      id: bankId,
-      library: { id: libraryId }
+  console.log(`[IPC] Get patches request received for library ${libraryId}, bank ${bankId}`);
+  try {
+    // Verify the bank belongs to the specified library
+    const bank = await bankRepo.findOne({
+      where: { 
+        id: bankId,
+        library: { id: libraryId }
+      }
+    });
+
+    if (!bank) {
+      console.error(`[IPC] Bank ${bankId} not found in library ${libraryId}`);
+      throw new Error('Bank not found in the specified library');
     }
-  });
 
-  if (!bank) {
-    throw new Error('Bank not found in the specified library');
+    // Get all patches for the specified bank
+    const patches = await patchRepo.find({
+      where: { bank: { id: bankId } },
+      order: { patch_number: 'ASC' }
+    });
+    console.log(`[IPC] Loaded ${patches.length} patches for bank ${bankId}`);
+    return patches;
+  } catch (error) {
+    console.error('[IPC] Error getting patches for bank:', error);
+    throw error;
   }
-
-  // Get all patches for the specified bank
-  return await patchRepo.find({
-    where: { bank: { id: bankId } },
-    order: { patch_number: 'ASC' }
-  });
 });
 
 // Add new IPC handler for deleting a library
 ipcMain.handle('delete-library', async (_: unknown, libraryId: number): Promise<boolean> => {
+  console.log(`[IPC] Delete library request received for library ID: ${libraryId}`);
   try {
     // First delete all related patches and sequences
     const banks = await bankRepo.find({ where: { library: { id: libraryId } } });
+    console.log(`[IPC] Found ${banks.length} banks to delete for library ${libraryId}`);
+    
     for (const bank of banks) {
       await patchRepo.delete({ bank: { id: bank.id } });
       await patchSequenceRepo.delete({ bank: { id: bank.id } });
@@ -321,9 +374,10 @@ ipcMain.handle('delete-library', async (_: unknown, libraryId: number): Promise<
     // Finally delete the library
     await libraryRepo.delete(libraryId);
     
+    console.log(`[IPC] Successfully deleted library ${libraryId} and all related data`);
     return true;
   } catch (error) {
-    console.error('Error deleting library:', error);
+    console.error('[IPC] Error deleting library:', error);
     return false;
   }
 });

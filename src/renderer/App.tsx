@@ -101,6 +101,19 @@ const App: React.FC = () => {
     loadPatches();
   }, [selectedLibrary, selectedBank]);
 
+  // Listen for import-library event from the main process
+  useEffect(() => {
+    window.electronAPI.onImportLibrary(async (dirPath: string) => {
+      await window.electronAPI.importLibrary();
+      // Reload libraries after import
+      const loadedLibraries = await window.electronAPI.loadLibraries();
+      setLibraries(loadedLibraries);
+      if (loadedLibraries.length > 0) {
+        setSelectedLibrary(loadedLibraries[0]);
+      }
+    });
+  }, []);
+
   const handleLibraryChange = (libraryId: string) => {
     const library = libraries.find(l => l.id.toString() === libraryId);
     setSelectedLibrary(library || null);
@@ -128,11 +141,14 @@ const App: React.FC = () => {
     if (patch) {
       try {
         await window.electronAPI.updatePatch(patchId, { favorited: !patch.favorited });
-        setPatches(patches.map(p => 
-          p.id.toString() === patchId 
-            ? { ...p, favorited: !p.favorited }
-            : p
-        ));
+        setPatches(patches.map(p => {
+          if (p.id.toString() === patchId) {
+            const updatedPatch = new Patch();
+            Object.assign(updatedPatch, p, { favorited: !p.favorited });
+            return updatedPatch;
+          }
+          return p;
+        }));
       } catch (error) {
         console.error('Error updating patch:', error);
       }
@@ -146,11 +162,14 @@ const App: React.FC = () => {
       const updatedTags = currentTags.filter((tag: string) => tag !== tagToRemove);
       try {
         await window.electronAPI.updatePatch(patchId, { tags: JSON.stringify(updatedTags) });
-        setPatches(patches.map(p => 
-          p.id.toString() === patchId 
-            ? { ...p, tags: JSON.stringify(updatedTags) }
-            : p
-        ));
+        setPatches(patches.map(p => {
+          if (p.id.toString() === patchId) {
+            const updatedPatch = new Patch();
+            Object.assign(updatedPatch, p, { tags: JSON.stringify(updatedTags) });
+            return updatedPatch;
+          }
+          return p;
+        }));
       } catch (error) {
         console.error('Error updating patch:', error);
       }
@@ -165,11 +184,14 @@ const App: React.FC = () => {
         const updatedTags = [...currentTags, newTag];
         try {
           await window.electronAPI.updatePatch(patchId, { tags: JSON.stringify(updatedTags) });
-          setPatches(patches.map(p => 
-            p.id.toString() === patchId 
-              ? { ...p, tags: JSON.stringify(updatedTags) }
-              : p
-          ));
+          setPatches(patches.map(p => {
+            if (p.id.toString() === patchId) {
+              const updatedPatch = new Patch();
+              Object.assign(updatedPatch, p, { tags: JSON.stringify(updatedTags) });
+              return updatedPatch;
+            }
+            return p;
+          }));
         } catch (error) {
           console.error('Error updating patch:', error);
         }

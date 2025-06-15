@@ -256,7 +256,7 @@ const App: React.FC = () => {
           <PatchGrid
             patches={patches.map(patch => ({
               id: patch.id.toString(),
-              name: patch.name,
+              name: capitalizeWords(patch.name),
               tags: JSON.parse(patch.tags || '[]'),
               favorited: patch.favorited,
               selected: selectedPatches.has(patch.id.toString())

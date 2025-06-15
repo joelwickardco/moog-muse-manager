@@ -259,7 +259,7 @@ const App: React.FC = () => {
             const bank = banks.find(b => b.name === value);
             if (bank) setSelectedBank(bank);
           }}
-          onSlotToggle={(index) => {
+          onSlotToggle={(_index) => {
             // TODO: Implement slot selection logic
           }}
           onConfirm={() => {

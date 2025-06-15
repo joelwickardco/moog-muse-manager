@@ -1,6 +1,5 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu, MenuItemConstructorOptions } from 'electron';
 import path from 'path';
-import fs from 'fs';
 import { Repository } from 'typeorm';
 import { importLibrary } from './services/importLibrary';
 import { exportLibrary } from './services/exportLibrary';

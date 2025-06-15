@@ -89,8 +89,8 @@ export function CopyToDrawer({
                     slot.occupied && !slot.selected
                       ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
                       : slot.selected
-                      ? 'bg-blue-600 text-white border-blue-500'
-                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                        ? 'bg-blue-600 text-white border-blue-500'
+                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
                   )}
                 >
                   {slot.index + 1}

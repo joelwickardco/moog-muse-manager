@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import { app, BrowserWindow, ipcMain, dialog, Menu, MenuItemConstructorOptions } from 'electron';
 import path from 'path';
 import { Repository } from 'typeorm';

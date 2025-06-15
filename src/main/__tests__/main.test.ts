@@ -1,7 +1,10 @@
 jest.mock('fs');
 jest.mock('path');
 
-jest.mock("typeorm", () => ({ Repository: class {} }));
+jest.mock('typeorm', () => {
+  const actual = jest.requireActual('typeorm');
+  return { ...actual, Repository: class {} };
+});
 const handleMock = jest.fn();
 const showOpenDialogMock = jest.fn();
 const showSaveDialogMock = jest.fn();

@@ -164,14 +164,14 @@ const App: React.FC = () => {
   const handlePatchTagRemove = async (patchId: string, tagToRemove: string) => {
     const patch = patches.find(p => p.id.toString() === patchId);
     if (patch) {
-      const currentTags = JSON.parse(patch.tags || '[]');
+      const currentTags = patch.tags || [];
       const updatedTags = currentTags.filter((tag: string) => tag !== tagToRemove);
       try {
-        await window.electronAPI.updatePatch(patchId, { tags: JSON.stringify(updatedTags) });
+        await window.electronAPI.updatePatch(patchId, { tags: updatedTags });
         setPatches(patches.map(p => {
           if (p.id.toString() === patchId) {
             const updatedPatch = new Patch();
-            Object.assign(updatedPatch, p, { tags: JSON.stringify(updatedTags) });
+            Object.assign(updatedPatch, p, { tags: updatedTags });
             return updatedPatch;
           }
           return p;
@@ -185,15 +185,15 @@ const App: React.FC = () => {
   const handlePatchTagAdd = async (patchId: string, newTag: string) => {
     const patch = patches.find(p => p.id.toString() === patchId);
     if (patch) {
-      const currentTags = JSON.parse(patch.tags || '[]');
+      const currentTags = patch.tags || [];
       if (!currentTags.includes(newTag)) {
         const updatedTags = [...currentTags, newTag];
         try {
-          await window.electronAPI.updatePatch(patchId, { tags: JSON.stringify(updatedTags) });
+          await window.electronAPI.updatePatch(patchId, { tags: updatedTags });
           setPatches(patches.map(p => {
             if (p.id.toString() === patchId) {
               const updatedPatch = new Patch();
-              Object.assign(updatedPatch, p, { tags: JSON.stringify(updatedTags) });
+              Object.assign(updatedPatch, p, { tags: updatedTags });
               return updatedPatch;
             }
             return p;
@@ -257,7 +257,7 @@ const App: React.FC = () => {
             patches={patches.map(patch => ({
               id: patch.id.toString(),
               name: capitalizeWords(patch.name),
-              tags: JSON.parse(patch.tags || '[]'),
+              tags: patch.tags || [],
               favorited: patch.favorited,
               selected: selectedPatches.has(patch.id.toString())
             }))}

@@ -37,7 +37,7 @@ describe('App', () => {
         bank_id: 1,
         path: '/path/to/patch1',
         favorited: false,
-        tags: JSON.stringify(['tag1', 'tag2']),
+        tags: ['tag1', 'tag2'],
         library_id: 1,
       },
       {
@@ -47,7 +47,7 @@ describe('App', () => {
         bank_id: 2,
         path: '/path/to/patch2',
         favorited: true,
-        tags: JSON.stringify(['tag3']),
+        tags: ['tag3'],
         library_id: 1,
       },
     ]);
@@ -60,7 +60,7 @@ describe('App', () => {
         bank_id: 1,
         path: '/path/to/patch1',
         favorited: false,
-        tags: JSON.stringify(['tag1', 'tag2']),
+        tags: ['tag1', 'tag2'],
         library_id: 1,
       },
       {
@@ -70,7 +70,7 @@ describe('App', () => {
         bank_id: 2,
         path: '/path/to/patch2',
         favorited: true,
-        tags: JSON.stringify(['tag3']),
+        tags: ['tag3'],
         library_id: 1,
       },
     ]);

@@ -101,7 +101,7 @@ export async function importLibrary(
             fingerprint: patchFingerprint,
             default_patch: false,
             favorited: false,
-            tagsArray: tags
+            tags
           });
         } else {
           // Create default patch
@@ -112,7 +112,7 @@ export async function importLibrary(
             fingerprint: createHash('sha256').update(`${patchBank.id}-${patchNum}`).digest('hex'),
             default_patch: true,
             favorited: false,
-            tags: ''
+            tags: []
           });
         }
         await patchRepo.save(patch);
